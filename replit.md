@@ -20,15 +20,15 @@ The frontend is built with React 18 and TypeScript, utilizing Wouter for routing
 
 ### Backend Architecture
 
-The backend is developed with Node.js and Express.js in TypeScript (ESM modules). It follows a RESTful API design with shared route contracts and Zod schemas for request/response validation. Session management is handled by Express sessions backed by a PostgreSQL store.
+The backend is developed with Node.js and Express.js in TypeScript (ESM modules). It follows a RESTful API design with shared route contracts and Zod schemas for request/response validation.
 
 ### Data Layer
 
-Drizzle ORM is used with PostgreSQL for database interactions. Database models are defined in `shared/schema.ts`, and Drizzle Kit manages migrations.
+Drizzle ORM is used with **SQLite** for database interactions. The database is stored locally at `./data/local.db`. Database models are defined in `shared/schema.ts`, and Drizzle Kit manages migrations.
 
 ### Authentication
 
-Replit Auth (OpenID Connect) handles authentication, with user data automatically upserted and synchronized upon login. Session storage is managed by `connect-pg-simple` with PostgreSQL.
+Replit Auth (OpenID Connect) handles authentication, with user data automatically upserted and synchronized upon login.
 
 ### Project Structure
 
@@ -72,8 +72,8 @@ The database schema includes core tables for `users`, `sessions`, `ipos`, `watch
 
 ## External Dependencies
 
-- **Database**: PostgreSQL (via `DATABASE_URL`)
-- **Authentication**: Replit Auth (OpenID Connect, `ISSUER_URL`, `REPL_ID`, `SESSION_SECRET`)
+- **Database**: SQLite (local file at `./data/local.db`)
+- **Authentication**: Replit Auth (OpenID Connect, `REPL_ID`, `SESSION_SECRET`)
 - **UI Components**: Radix UI primitives
 - **Date Handling**: date-fns
 - **HTTP Client**: Native fetch with TanStack Query
@@ -81,3 +81,9 @@ The database schema includes core tables for `users`, `sessions`, `ipos`, `watch
 - **AI Providers**: Google Gemini (`GEMINI_API_KEY`), Mistral (`MISTRAL_API_KEY`), OpenAI (`OPENAI_API_KEY`)
 - **Email Service**: Resend (`RESEND_API_KEY`)
 - **Development Tools**: Vite Plugins (cartographer, dev-banner, error overlay), esbuild
+
+## Recent Changes
+
+- **January 2026**: Migrated project structure from subdirectory to root level
+- **January 2026**: Switched from PostgreSQL to SQLite for simpler local development
+- **January 2026**: Updated Vite configuration with `allowedHosts: true` for Replit proxy compatibility

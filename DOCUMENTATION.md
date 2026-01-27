@@ -185,7 +185,7 @@ The Dashboard provides a comprehensive view of all IPOs:
 | Express.js | Web framework |
 | TypeScript | Type-safe development |
 | Drizzle ORM | Database operations |
-| PostgreSQL | Data storage |
+| SQLite | Data storage (local file-based) |
 | Zod | Schema validation |
 
 ### Project Structure
@@ -233,7 +233,7 @@ ipo-analyzer/
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   Chittorgarh   │────▶│    Scraper      │────▶│    Database     │
-│   (Data Source) │     │    Service      │     │   (PostgreSQL)  │
+│   (Data Source) │     │    Service      │     │    (SQLite)     │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
                                                         │
                                                         ▼
@@ -472,9 +472,10 @@ Triggers a full data synchronization:
 
 | Variable | Description | Set By |
 |----------|-------------|--------|
-| `DATABASE_URL` | PostgreSQL connection string | Replit (automatic) |
 | `SESSION_SECRET` | Secret for session encryption | Replit (automatic) |
 | `REPL_ID` | Replit environment identifier | Replit (automatic) |
+
+**Note:** The application uses SQLite stored locally in `./data/local.db`. No external database configuration is required.
 
 ### Optional Variables
 
@@ -496,6 +497,8 @@ Triggers a full data synchronization:
 
 ## Database Schema
 
+The application uses **SQLite** as its database, stored locally at `./data/local.db`. This provides a simple, file-based storage solution that requires no external database setup.
+
 ### Tables
 
 #### users
@@ -508,33 +511,31 @@ Stores authenticated user information.
 | firstName | text | First name |
 | lastName | text | Last name |
 | profileImageUrl | text | Profile picture URL |
-| createdAt | timestamp | Account creation date |
-| updatedAt | timestamp | Last update date |
+| createdAt | integer | Account creation date (timestamp) |
+| updatedAt | integer | Last update date (timestamp) |
 
 #### ipos
 Stores IPO data and computed scores.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| id | serial | Primary key |
+| id | integer | Primary key (auto-increment) |
 | companyName | text | Company name |
 | symbol | text | Unique stock symbol |
 | status | text | open, upcoming, closed |
-| openDate | date | Subscription open date |
-| closeDate | date | Subscription close date |
-| listingDate | date | Expected listing date |
-| priceMin | integer | Lower price band |
-| priceMax | integer | Upper price band |
-| issueSize | real | Issue size in crores |
+| expectedDate | text | Expected IPO date |
+| priceRange | text | Price band (e.g., "₹140 - ₹144") |
+| issueSize | text | Issue size in crores |
 | lotSize | integer | Minimum lot size |
+| sector | text | Industry sector |
 | gmp | integer | Grey Market Premium |
-| gmpPercentage | real | GMP as percentage |
 | overallScore | real | Computed overall score |
 | fundamentalsScore | real | Fundamentals component |
 | valuationScore | real | Valuation component |
 | governanceScore | real | Governance component |
 | riskLevel | text | conservative, moderate, aggressive |
-| redFlags | text[] | Array of detected red flags |
+| redFlags | text | JSON array of detected red flags |
+| pros | text | JSON array of positive points |
 | aiSummary | text | AI-generated summary |
 | aiRecommendation | text | AI-generated recommendation |
 
