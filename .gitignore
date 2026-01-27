@@ -1,1 +1,10 @@
 node_modules
+dist
+.env
+.env.local
+*.log
+.DS_Store
+.replit.nix
+*.db
+*.sqlite
+data/*.db
