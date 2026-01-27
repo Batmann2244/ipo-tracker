@@ -1,4 +1,5 @@
 import axios, { AxiosRequestConfig } from "axios";
+import { scraperLogger, type ScraperSource, type ScraperOperation } from "../scraper-logger";
 
 export const DEFAULT_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -196,15 +197,35 @@ export abstract class BaseScraper {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  protected wrapResult<T>(data: T[], startTime: number, error?: string): ScraperResult<T> {
+  protected wrapResult<T>(data: T[], startTime: number, error?: string, operation: ScraperOperation = 'ipos'): ScraperResult<T> {
+    const responseTimeMs = Date.now() - startTime;
+    const sourceName = this.name.toLowerCase() as ScraperSource;
+    
+    // Log the result to the scraper logger
+    if (!error) {
+      scraperLogger.logSuccess(sourceName, operation, data.length, responseTimeMs, {
+        dataTypes: data.length > 0 ? Object.keys(data[0] as any).slice(0, 5) : []
+      });
+    } else {
+      scraperLogger.logError(sourceName, operation, error, responseTimeMs);
+    }
+    
     return {
       success: !error,
       data,
       source: this.name,
       timestamp: new Date(),
-      responseTimeMs: Date.now() - startTime,
+      responseTimeMs,
       error,
     };
+  }
+
+  protected wrapSubscriptionResult(data: SubscriptionData[], startTime: number, error?: string): ScraperResult<SubscriptionData> {
+    return this.wrapResult(data, startTime, error, 'subscription');
+  }
+
+  protected wrapGmpResult(data: GmpData[], startTime: number, error?: string): ScraperResult<GmpData> {
+    return this.wrapResult(data, startTime, error, 'gmp');
   }
 
   abstract getIpos(): Promise<ScraperResult<IpoData>>;
