@@ -390,15 +390,35 @@ export async function registerRoutes(
 
   app.post("/api/admin/sync", requireAuth, async (req, res) => {
     try {
-      console.log("🔄 Starting IPO data sync from Chittorgarh...");
+      console.log("🔄 Starting IPO data sync from multiple sources...");
       
       const scrapedIpos = await scrapeAndTransformIPOs();
+      
+      console.log("🔄 Fetching InvestorGain data for GMP and IDs...");
+      const igResult = await investorGainScraper.getIpos();
+      const igIpos = igResult.success ? igResult.data : [];
+      console.log(`📊 InvestorGain returned ${igIpos.length} IPOs`);
+      
+      const igMap = new Map<string, typeof igIpos[0]>();
+      for (const igIpo of igIpos) {
+        const normalizedName = igIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        igMap.set(normalizedName, igIpo);
+        igMap.set(igIpo.symbol.toLowerCase(), igIpo);
+      }
       
       let created = 0;
       let updated = 0;
       let analyticsAdded = 0;
       
       for (const ipo of scrapedIpos) {
+        const normalizedName = ipo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const igMatch = igMap.get(normalizedName) || igMap.get(ipo.symbol.toLowerCase());
+        
+        if (igMatch) {
+          ipo.investorGainId = igMatch.investorGainId ?? null;
+          ipo.gmp = igMatch.gmp ?? ipo.gmp;
+          ipo.basisOfAllotmentDate = igMatch.basisOfAllotmentDate ?? ipo.basisOfAllotmentDate;
+        }
         const existing = await storage.getIpoBySymbol(ipo.symbol);
         const savedIpo = await storage.upsertIpo(ipo);
         
@@ -923,6 +943,9 @@ export async function registerRoutes(
 
   // Auto-sync from scraper on startup if database is empty
   await autoSyncOnStartup();
+  
+  // Always try to update with InvestorGain data
+  await syncInvestorGainData();
 
   return httpServer;
 }
@@ -998,5 +1021,55 @@ async function autoSyncOnStartup() {
       console.error("❌ Auto-sync failed:", error);
       console.log("💡 Use the Admin panel (/admin) to manually sync IPO data.");
     }
+  }
+}
+
+async function syncInvestorGainData() {
+  try {
+    console.log("🔄 Syncing InvestorGain data...");
+    const igResult = await investorGainScraper.getIpos();
+    
+    if (!igResult.success || igResult.data.length === 0) {
+      console.log("⚠️ No InvestorGain data available");
+      return;
+    }
+    
+    console.log(`📊 Found ${igResult.data.length} IPOs from InvestorGain`);
+    
+    const dbIpos = await storage.getIpos();
+    let updatedCount = 0;
+    
+    for (const dbIpo of dbIpos) {
+      const normalizedDbName = dbIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
+      
+      const match = igResult.data.find(igIpo => {
+        const normalizedIgName = igIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        return normalizedDbName.includes(normalizedIgName) || 
+               normalizedIgName.includes(normalizedDbName) ||
+               normalizedDbName === normalizedIgName;
+      });
+      
+      if (match) {
+        const updates: any = {};
+        if (match.investorGainId && !dbIpo.investorGainId) {
+          updates.investorGainId = match.investorGainId;
+        }
+        if (dbIpo.gmp === 8377 || (match.gmp !== undefined && match.gmp !== dbIpo.gmp)) {
+          updates.gmp = match.gmp ?? 0;
+        }
+        if (match.basisOfAllotmentDate && !dbIpo.basisOfAllotmentDate) {
+          updates.basisOfAllotmentDate = match.basisOfAllotmentDate;
+        }
+        
+        if (Object.keys(updates).length > 0) {
+          await storage.updateIpo(dbIpo.id, updates);
+          updatedCount++;
+        }
+      }
+    }
+    
+    console.log(`✅ Updated ${updatedCount} IPOs with InvestorGain data`);
+  } catch (error) {
+    console.error("❌ InvestorGain sync failed:", error);
   }
 }

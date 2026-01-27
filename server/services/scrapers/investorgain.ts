@@ -140,8 +140,8 @@ export class InvestorGainScraper extends BaseScraper {
           status,
           ipoType: (ipo["~IPO_Category"]?.toLowerCase().includes("sme") ? "sme" : "mainboard") as "mainboard" | "sme",
           gmp,
-          gmpPercent: this.parseGmpPercent(ipo["~gmp_percent_calc"]),
-          subscriptionQib: this.parseSubscriptionValue(ipo.Sub),
+          gmpPercent: this.parseGmpPercent(ipo["~gmp_percent_calc"]) ?? undefined,
+          subscriptionQib: this.parseSubscriptionValue(ipo.Sub) ?? undefined,
           investorGainId: ipo["~id"],
           basisOfAllotmentDate: ipo["~Srt_BoA_Dt"] || undefined,
         };
@@ -317,7 +317,9 @@ export class InvestorGainScraper extends BaseScraper {
 
   private parseGmp(gmpStr: string): number {
     if (!gmpStr) return 0;
-    const match = gmpStr.match(/[+-]?\s*₹?\s*(\d+)/);
+    if (gmpStr.includes("--") || gmpStr.includes("<b>--</b>")) return 0;
+    const cleaned = gmpStr.replace(/&#\d+;/g, "").replace(/<[^>]+>/g, "");
+    const match = cleaned.match(/[+-]?\s*₹?\s*(\d+)/);
     return match ? parseInt(match[1], 10) : 0;
   }
 
