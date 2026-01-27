@@ -155,6 +155,19 @@ export const fundUtilization = sqliteTable("fund_utilization", {
   updatedAt: integer("updated_at", { mode: 'timestamp' }).$defaultFn(() => new Date()),
 });
 
+// Scraper Logs for monitoring data sources
+export const scraperLogs = sqliteTable("scraper_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  source: text("source").notNull(), // 'chittorgarh', 'groww', 'nse', 'nsetools', 'investorgain'
+  operation: text("operation").notNull(), // 'ipos', 'gmp', 'subscription'
+  status: text("status").notNull(), // 'success', 'error', 'timeout'
+  recordsCount: integer("records_count").default(0),
+  responseTimeMs: integer("response_time_ms"),
+  errorMessage: text("error_message"),
+  metadata: text("metadata"), // JSON string for additional info
+  createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()),
+});
+
 // IPO Timeline/Calendar events
 export const ipoTimeline = sqliteTable("ipo_timeline", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -193,6 +206,7 @@ export const insertPeerCompanySchema = createInsertSchema(peerCompanies).omit({ 
 export const insertSubscriptionUpdateSchema = createInsertSchema(subscriptionUpdates).omit({ id: true, recordedAt: true });
 export const insertFundUtilizationSchema = createInsertSchema(fundUtilization).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertIpoTimelineSchema = createInsertSchema(ipoTimeline).omit({ id: true, createdAt: true });
+export const insertScraperLogSchema = createInsertSchema(scraperLogs).omit({ id: true, createdAt: true });
 
 // === EXPLICIT API CONTRACT TYPES ===
 export type Ipo = typeof ipos.$inferSelect;
@@ -213,6 +227,8 @@ export type FundUtilizationEntry = typeof fundUtilization.$inferSelect;
 export type InsertFundUtilization = z.infer<typeof insertFundUtilizationSchema>;
 export type IpoTimelineEvent = typeof ipoTimeline.$inferSelect;
 export type InsertIpoTimeline = z.infer<typeof insertIpoTimelineSchema>;
+export type ScraperLog = typeof scraperLogs.$inferSelect;
+export type InsertScraperLog = z.infer<typeof insertScraperLogSchema>;
 
 // API Responses
 export type IpoResponse = Ipo;

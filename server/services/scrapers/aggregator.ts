@@ -10,6 +10,7 @@ import { growwScraper } from "./groww";
 import { investorGainScraper } from "./investorgain";
 import { nseScraper } from "./nse";
 import { nseToolsScraper } from "./nsetools";
+import { scraperLogger, type ScraperSource, type ScraperOperation } from "../scraper-logger";
 
 export interface AggregatedIpoData extends IpoData {
   sources: string[];
@@ -97,6 +98,16 @@ export class ScraperAggregator {
       count: r.data.length,
       responseTimeMs: r.responseTimeMs,
     }));
+
+    // Log each source result
+    for (const result of results) {
+      const source = result.source as ScraperSource;
+      if (result.success) {
+        scraperLogger.logSuccess(source, 'ipos', result.data.length, result.responseTimeMs);
+      } else {
+        scraperLogger.logError(source, 'ipos', result.error || 'Unknown error', result.responseTimeMs);
+      }
+    }
 
     this.log(`Aggregated ${aggregated.length} IPOs from ${results.filter(r => r.success).length} sources`);
 

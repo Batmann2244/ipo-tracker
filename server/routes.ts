@@ -36,6 +36,7 @@ import {
   getTodayUsageCount,
   getTierLimits
 } from "./services/api-key-service";
+import { scraperLogger } from "./services/scraper-logger";
 
 export async function registerRoutes(
   httpServer: Server, // Accept httpServer as parameter
@@ -733,6 +734,47 @@ export async function registerRoutes(
         success: false, 
         error: error instanceof Error ? error.message : "Alert failed" 
       });
+    }
+  });
+
+  // Scraper Logger Routes
+  app.get("/api/admin/scraper-logs", requireAuth, async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 50, 200);
+      const logs = await scraperLogger.getRecentLogs(limit);
+      res.json(logs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch scraper logs" });
+    }
+  });
+
+  app.get("/api/admin/scraper-logs/source/:source", requireAuth, async (req, res) => {
+    try {
+      const source = req.params.source as any;
+      const limit = Math.min(Number(req.query.limit) || 20, 100);
+      const logs = await scraperLogger.getLogsBySource(source, limit);
+      res.json(logs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch source logs" });
+    }
+  });
+
+  app.get("/api/admin/scraper-stats", requireAuth, async (req, res) => {
+    try {
+      const hoursBack = Number(req.query.hours) || 24;
+      const stats = await scraperLogger.getSourceStats(hoursBack);
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch scraper stats" });
+    }
+  });
+
+  app.get("/api/admin/scraper-health", requireAuth, async (req, res) => {
+    try {
+      const health = await scraperLogger.getHealthStatus();
+      res.json(health);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch health status" });
     }
   });
 
