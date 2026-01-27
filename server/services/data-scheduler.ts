@@ -29,13 +29,11 @@ const state: SchedulerState = {
 };
 
 let pollInterval: NodeJS.Timeout | null = null;
-let ipoAlertsInterval: NodeJS.Timeout | null = null;
-let lastIpoAlertsFetchType: string | null = null;
 
 async function fetchFromIpoAlertsIfScheduled(): Promise<void> {
   const fetchType = ipoAlertsScraper.getScheduledFetchType();
   
-  if (!fetchType || fetchType === lastIpoAlertsFetchType) {
+  if (!fetchType) {
     return;
   }
 
@@ -45,7 +43,6 @@ async function fetchFromIpoAlertsIfScheduled(): Promise<void> {
   }
 
   console.log(`[IPOAlerts] 📊 Scheduled fetch: ${fetchType} IPOs`);
-  lastIpoAlertsFetchType = fetchType;
 
   try {
     const result = await ipoAlertsScraper.getScheduledIpos();

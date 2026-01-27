@@ -13,11 +13,29 @@ interface UsageTracker {
   lastReset: Date;
 }
 
+function getIstDateString(): string {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + istOffset);
+  return istTime.toISOString().split('T')[0];
+}
+
+function getIstTime(): { hours: number; minutes: number; timeValue: number } {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + istOffset);
+  const hours = istTime.getUTCHours();
+  const minutes = istTime.getUTCMinutes();
+  return { hours, minutes, timeValue: hours * 60 + minutes };
+}
+
 let usageTracker: UsageTracker = {
-  date: new Date().toISOString().split('T')[0],
+  date: getIstDateString(),
   requestCount: 0,
   lastReset: new Date(),
 };
+
+let lastFetchDateMap: Map<string, string> = new Map();
 
 interface IpoAlertsIpo {
   id: string;
@@ -57,14 +75,15 @@ interface IpoAlertsResponse {
 }
 
 function resetDailyUsageIfNeeded(): void {
-  const today = new Date().toISOString().split('T')[0];
-  if (usageTracker.date !== today) {
-    console.log(`[IPOAlerts] Resetting daily usage counter (new day: ${today})`);
+  const todayIst = getIstDateString();
+  if (usageTracker.date !== todayIst) {
+    console.log(`[IPOAlerts] Resetting daily usage counter (new IST day: ${todayIst})`);
     usageTracker = {
-      date: today,
+      date: todayIst,
       requestCount: 0,
       lastReset: new Date(),
     };
+    lastFetchDateMap.clear();
   }
 }
 
@@ -79,26 +98,31 @@ function getRemainingRequests(): number {
 }
 
 function isWithinMarketHours(): boolean {
-  const now = new Date();
-  const istOffset = 5.5 * 60 * 60 * 1000;
-  const istTime = new Date(now.getTime() + istOffset);
-  const hours = istTime.getUTCHours();
-  return hours >= 10 && hours < 16;
+  const { timeValue } = getIstTime();
+  return timeValue >= 555 && timeValue <= 1050;
 }
 
 function getScheduledFetchType(): 'open' | 'upcoming' | 'listed' | null {
-  const now = new Date();
-  const istOffset = 5.5 * 60 * 60 * 1000;
-  const istTime = new Date(now.getTime() + istOffset);
-  const hours = istTime.getUTCHours();
-  const minutes = istTime.getUTCMinutes();
-  const timeValue = hours * 60 + minutes;
+  resetDailyUsageIfNeeded();
+  const todayIst = getIstDateString();
+  const { timeValue } = getIstTime();
 
-  if (timeValue >= 615 && timeValue < 660) return 'open';
-  if (timeValue >= 720 && timeValue < 780) return 'upcoming';
-  if (timeValue >= 840 && timeValue < 900) return 'listed';
+  if (timeValue >= 615 && timeValue < 660) {
+    if (lastFetchDateMap.get('open') !== todayIst) return 'open';
+  }
+  if (timeValue >= 720 && timeValue < 780) {
+    if (lastFetchDateMap.get('upcoming') !== todayIst) return 'upcoming';
+  }
+  if (timeValue >= 840 && timeValue < 900) {
+    if (lastFetchDateMap.get('listed') !== todayIst) return 'listed';
+  }
   
   return null;
+}
+
+function markFetchCompleted(fetchType: 'open' | 'upcoming' | 'listed'): void {
+  const todayIst = getIstDateString();
+  lastFetchDateMap.set(fetchType, todayIst);
 }
 
 async function fetchFromApi(endpoint: string): Promise<any> {
@@ -205,21 +229,15 @@ function parseIpoData(ipo: IpoAlertsIpo): IpoData {
   };
 }
 
-async function getIposByStatus(status: 'open' | 'upcoming' | 'listed' | 'closed'): Promise<ScraperResult<IpoData>> {
+async function getIposByStatus(status: 'open' | 'upcoming' | 'listed' | 'closed', isScheduled = false): Promise<ScraperResult<IpoData>> {
   const startTime = Date.now();
   
   try {
-    if (!isWithinMarketHours() && status !== 'upcoming') {
-      return {
-        success: true,
-        data: [],
-        source: "ipoalerts",
-        timestamp: new Date(),
-        responseTimeMs: Date.now() - startTime,
-      };
-    }
-
     const response = await fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}`) as IpoAlertsResponse;
+    
+    if (isScheduled && (status === 'open' || status === 'upcoming' || status === 'listed')) {
+      markFetchCompleted(status);
+    }
     
     const ipos = response.ipos.map(parseIpoData);
     const responseTime = Date.now() - startTime;
@@ -280,7 +298,7 @@ async function getScheduledIpos(): Promise<ScraperResult<IpoData>> {
   }
 
   console.log(`[IPOAlerts] Scheduled fetch: ${fetchType} IPOs`);
-  return getIposByStatus(fetchType);
+  return getIposByStatus(fetchType, true);
 }
 
 async function getIpoDetails(identifier: string): Promise<ScraperResult<IpoData>> {

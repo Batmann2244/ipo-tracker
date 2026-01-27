@@ -108,6 +108,11 @@ export default function Admin() {
     refetchInterval: 10000,
   });
 
+  const { data: ipoAlertsUsage } = useQuery<{ date: string; used: number; remaining: number; limit: number; canMakeRequest: boolean; scheduledFetchType: string | null }>({
+    queryKey: ["/api/ipoalerts/usage"],
+    refetchInterval: 60000,
+  });
+
   const startSchedulerMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/scheduler/start");
@@ -434,6 +439,18 @@ export default function Admin() {
                         <p className="text-sm text-muted-foreground mt-1">
                           {source.description}
                         </p>
+                        {source.id === 'ipoalerts' && ipoAlertsUsage && (
+                          <div className="flex items-center gap-2 mt-2">
+                            <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/30">
+                              {ipoAlertsUsage.used}/{ipoAlertsUsage.limit} used today
+                            </Badge>
+                            {ipoAlertsUsage.scheduledFetchType && (
+                              <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30">
+                                Next: {ipoAlertsUsage.scheduledFetchType}
+                              </Badge>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         {getStatusBadge(health?.status)}
