@@ -47,15 +47,15 @@ function StatusBadge({ status }: { status: string }) {
   const isUpcoming = status === 'upcoming';
   
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${
       isOpen 
-        ? 'bg-green-500/20 text-green-400' 
+        ? 'bg-green-50 text-green-700 border-green-200' 
         : isUpcoming 
-          ? 'bg-amber-500/20 text-amber-400'
-          : 'bg-zinc-600/20 text-zinc-400'
+          ? 'bg-amber-50 text-amber-700 border-amber-200'
+          : 'bg-gray-50 text-gray-600 border-gray-200'
     }`}>
       <span className={`w-1.5 h-1.5 rounded-full ${
-        isOpen ? 'bg-green-400' : isUpcoming ? 'bg-amber-400' : 'bg-zinc-400'
+        isOpen ? 'bg-green-500' : isUpcoming ? 'bg-amber-500' : 'bg-gray-400'
       }`}></span>
       {status.charAt(0).toUpperCase() + status.slice(1)}
     </span>
@@ -64,11 +64,11 @@ function StatusBadge({ status }: { status: string }) {
 
 export function IpoTable({ ipos }: IpoTableProps) {
   return (
-    <div className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800">
+    <div className="bg-card rounded-xl overflow-hidden border border-border">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-zinc-500 text-left border-b border-zinc-800 text-xs uppercase">
+            <tr className="text-muted-foreground text-left border-b border-border text-xs uppercase bg-muted/50">
               <th className="px-4 py-3 font-medium">IPO Details</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Price</th>
@@ -96,14 +96,14 @@ export function IpoTable({ ipos }: IpoTableProps) {
               return (
                 <tr 
                   key={ipo.id} 
-                  className="border-b border-zinc-800 hover:bg-zinc-800/50 transition-colors"
+                  className="border-b border-border hover:bg-muted/30 transition-colors"
                 >
                   <td className="px-4 py-4">
                     <Link href={`/ipos/${ipo.id}`}>
                       <div className="flex items-center gap-2 cursor-pointer hover:text-primary transition-colors">
-                        <span className="text-white font-medium">{ipo.companyName}</span>
+                        <span className="text-foreground font-medium">{ipo.companyName}</span>
                         {isSme && (
-                          <span className="bg-zinc-700 text-zinc-300 text-[10px] px-1.5 py-0.5 rounded font-medium">
+                          <span className="bg-muted text-muted-foreground text-[10px] px-1.5 py-0.5 rounded font-medium border border-border">
                             SME
                           </span>
                         )}
@@ -114,32 +114,32 @@ export function IpoTable({ ipos }: IpoTableProps) {
                     <StatusBadge status={ipo.status} />
                   </td>
                   <td className="px-4 py-4">
-                    <div className="text-white">{priceInfo.value}</div>
-                    <div className="text-xs text-zinc-500">{priceInfo.percent}</div>
+                    <div className="text-foreground">{priceInfo.value}</div>
+                    <div className="text-xs text-muted-foreground">{priceInfo.percent}</div>
                   </td>
                   <td className="px-4 py-4">
-                    <div className="text-white">₹{gmpValue}</div>
-                    <div className="text-xs text-zinc-500">{gmpPercent}%</div>
+                    <div className="text-foreground">₹{gmpValue}</div>
+                    <div className="text-xs text-muted-foreground">{gmpPercent}%</div>
                   </td>
                   <td className="px-4 py-4">
-                    <div className="text-white">{estListing.price}</div>
-                    <div className="text-xs text-zinc-500">{estListing.percent}</div>
+                    <div className="text-foreground">{estListing.price}</div>
+                    <div className="text-xs text-muted-foreground">{estListing.percent}</div>
                   </td>
                   <td className="px-4 py-4">
-                    <div className={expectedProfit >= 0 ? 'text-green-400' : 'text-red-400'}>
+                    <div className={expectedProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
                       ₹{expectedProfit}
                     </div>
-                    <div className="text-xs text-zinc-500">Profit</div>
+                    <div className="text-xs text-muted-foreground">Profit</div>
                   </td>
-                  <td className="px-4 py-4 text-white">{lotSizeNum}</td>
-                  <td className="px-4 py-4 text-white">{ipo.issueSize || "TBA"}</td>
-                  <td className="px-4 py-4 text-white">-</td>
+                  <td className="px-4 py-4 text-foreground">{lotSizeNum}</td>
+                  <td className="px-4 py-4 text-foreground">{ipo.issueSize || "TBA"}</td>
+                  <td className="px-4 py-4 text-muted-foreground">-</td>
                   <td className="px-4 py-4">
-                    <div className="bg-green-500/20 text-green-400 text-xs px-3 py-2 rounded-lg text-center inline-block min-w-[70px]">
+                    <div className="bg-green-50 text-green-700 text-xs px-3 py-2 rounded-lg text-center inline-block min-w-[70px] border border-green-200">
                       <div className="font-medium">{biddingDates.start}</div>
                       {biddingDates.end && (
                         <>
-                          <div className="text-zinc-500 text-[10px]">to</div>
+                          <div className="text-green-600/70 text-[10px]">to</div>
                           <div className="font-medium">{biddingDates.end}</div>
                         </>
                       )}
