@@ -74,8 +74,52 @@ export async function setupAuth(app: Express) {
   // Skip OIDC setup if not configured (local development)
   if (!config) {
     console.log("⚠️  Replit Auth not configured - running in local mode");
+    
+    // Setup local development mock auth
     passport.serializeUser((user: Express.User, cb) => cb(null, user));
     passport.deserializeUser((user: Express.User, cb) => cb(null, user));
+    
+    // Mock login route for local development
+    app.get("/api/login", async (req, res) => {
+      const mockUser = {
+        claims: {
+          sub: "local-dev-user",
+          email: "dev@localhost.com",
+          first_name: "Dev",
+          last_name: "User",
+          profile_image_url: null,
+          exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60 // 1 week
+        },
+        access_token: "mock-access-token",
+        refresh_token: "mock-refresh-token",
+        expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
+      };
+      
+      // Upsert mock user
+      await authStorage.upsertUser({
+        id: mockUser.claims.sub,
+        email: mockUser.claims.email,
+        firstName: mockUser.claims.first_name,
+        lastName: mockUser.claims.last_name,
+        profileImageUrl: mockUser.claims.profile_image_url,
+      });
+      
+      req.login(mockUser, (err) => {
+        if (err) {
+          console.error("Mock login error:", err);
+          return res.status(500).send("Login failed");
+        }
+        res.redirect("/");
+      });
+    });
+    
+    // Mock logout route for local development
+    app.get("/api/logout", (req, res) => {
+      req.logout(() => {
+        res.redirect("/");
+      });
+    });
+    
     return;
   }
 

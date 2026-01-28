@@ -52,25 +52,40 @@ async function fetchFromIpoAlertsIfScheduled(): Promise<void> {
       
       for (const ipoData of result.data) {
         try {
-          const existingIpos = await storage.getIpos();
-          const existing = existingIpos.find(ipo => 
-            ipo.symbol === ipoData.symbol || 
-            ipo.companyName.toLowerCase().includes(ipoData.companyName.toLowerCase().slice(0, 10))
-          );
-
-          if (existing && existing.id) {
-            await storage.updateIpo(existing.id, {
-              priceRange: ipoData.priceRange !== "TBA" ? ipoData.priceRange : existing.priceRange,
-              lotSize: ipoData.lotSize ?? existing.lotSize,
-              status: ipoData.status,
-              basisOfAllotmentDate: ipoData.basisOfAllotmentDate ?? existing.basisOfAllotmentDate,
-              refundsInitiationDate: ipoData.refundsInitiationDate ?? existing.refundsInitiationDate,
-              creditToDematDate: ipoData.creditToDematDate ?? existing.creditToDematDate,
-            });
-            console.log(`[IPOAlerts] Updated: ${ipoData.companyName}`);
-          }
+          // Map scraper data to InsertIpo schema and upsert
+          await storage.upsertIpo({
+            symbol: ipoData.symbol,
+            companyName: ipoData.companyName,
+            priceRange: ipoData.priceRange || "TBA",
+            totalShares: ipoData.totalShares ?? null,
+            expectedDate: ipoData.listingDate || ipoData.closeDate || ipoData.openDate || null,
+            status: ipoData.status,
+            description: ipoData.description ?? null,
+            sector: ipoData.sector ?? null,
+            lotSize: ipoData.lotSize ?? null,
+            minInvestment: ipoData.minInvestment ?? null,
+            issueSize: ipoData.issueSize || "TBA",
+            gmp: ipoData.gmp ?? null,
+            subscriptionQib: ipoData.subscriptionQib ?? null,
+            subscriptionHni: ipoData.subscriptionHni ?? null,
+            subscriptionRetail: ipoData.subscriptionRetail ?? null,
+            subscriptionNii: ipoData.subscriptionNii ?? null,
+            basisOfAllotmentDate: ipoData.basisOfAllotmentDate ?? null,
+            refundsInitiationDate: ipoData.refundsInitiationDate ?? null,
+            creditToDematDate: ipoData.creditToDematDate ?? null,
+            fundamentalsScore: ipoData.fundamentalsScore ?? null,
+            valuationScore: ipoData.valuationScore ?? null,
+            governanceScore: ipoData.governanceScore ?? null,
+            overallScore: ipoData.overallScore ?? null,
+            riskLevel: ipoData.riskLevel ?? null,
+            redFlags: ipoData.redFlags ? JSON.stringify(ipoData.redFlags) : null,
+            pros: ipoData.pros ? JSON.stringify(ipoData.pros) : null,
+            aiSummary: ipoData.aiSummary ?? null,
+            aiRecommendation: ipoData.aiRecommendation ?? null,
+          });
+          console.log(`[IPOAlerts] Upserted: ${ipoData.companyName}`);
         } catch (error) {
-          console.error(`[IPOAlerts] Failed to update ${ipoData.companyName}:`, error);
+          console.error(`[IPOAlerts] Failed to upsert ${ipoData.companyName}:`, error);
         }
       }
     }

@@ -1,4 +1,6 @@
 import axios, { AxiosRequestConfig } from "axios";
+import type { Logger } from "winston";
+import { getSourceLogger } from "../../logger";
 import { scraperLogger, type ScraperSource, type ScraperOperation } from "../scraper-logger";
 
 export const DEFAULT_HEADERS = {
@@ -128,18 +130,25 @@ export const DEFAULT_CONFIG: ScraperConfig = {
 export abstract class BaseScraper {
   protected name: string;
   protected config: ScraperConfig;
+  protected sourceKey: ScraperSource;
+  protected sourceLogger: Logger;
 
   constructor(name: string, config: Partial<ScraperConfig> = {}) {
     this.name = name;
+    this.sourceKey = name.toLowerCase() as ScraperSource;
+    this.sourceLogger = getSourceLogger(this.sourceKey);
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
   protected log(message: string): void {
-    console.log(`[${this.name}] ${message}`);
+    this.sourceLogger.info(message);
   }
 
   protected error(message: string, err?: any): void {
-    console.error(`[${this.name}] ERROR: ${message}`, err?.message || "");
+    this.sourceLogger.error(message, {
+      error: err?.message,
+      status: err?.response?.status,
+    });
   }
 
   protected async fetchPage(url: string, options: AxiosRequestConfig = {}): Promise<string> {
@@ -149,7 +158,11 @@ export abstract class BaseScraper {
     for (let attempt = 0; attempt <= this.config.retries; attempt++) {
       try {
         if (attempt > 0) {
-          this.log(`Retry attempt ${attempt}/${this.config.retries}`);
+          this.sourceLogger.warn("Retrying page fetch", {
+            url,
+            attempt,
+            retries: this.config.retries,
+          });
           await this.delay(this.config.retryDelay * attempt);
         }
 
@@ -159,11 +172,21 @@ export abstract class BaseScraper {
           ...options,
         });
 
-        this.log(`Fetched ${url} in ${Date.now() - startTime}ms`);
+        this.sourceLogger.info("Fetched page", {
+          url,
+          durationMs: Date.now() - startTime,
+          attempt,
+        });
         return response.data;
       } catch (err: any) {
         lastError = err;
-        this.error(`Failed to fetch ${url}`, err);
+        this.sourceLogger.error("Failed to fetch page", {
+          url,
+          attempt,
+          retries: this.config.retries,
+          error: err?.message,
+          status: err?.response?.status,
+        });
       }
     }
 
@@ -177,7 +200,11 @@ export abstract class BaseScraper {
     for (let attempt = 0; attempt <= this.config.retries; attempt++) {
       try {
         if (attempt > 0) {
-          this.log(`Retry attempt ${attempt}/${this.config.retries}`);
+          this.sourceLogger.warn("Retrying JSON fetch", {
+            url,
+            attempt,
+            retries: this.config.retries,
+          });
           await this.delay(this.config.retryDelay * attempt);
         }
 
@@ -190,11 +217,21 @@ export abstract class BaseScraper {
           ...options,
         });
 
-        this.log(`Fetched JSON ${url} in ${Date.now() - startTime}ms`);
+        this.sourceLogger.info("Fetched JSON", {
+          url,
+          durationMs: Date.now() - startTime,
+          attempt,
+        });
         return response.data;
       } catch (err: any) {
         lastError = err;
-        this.error(`Failed to fetch JSON ${url}`, err);
+        this.sourceLogger.error("Failed to fetch JSON", {
+          url,
+          attempt,
+          retries: this.config.retries,
+          error: err?.message,
+          status: err?.response?.status,
+        });
       }
     }
 
@@ -209,13 +246,14 @@ export abstract class BaseScraper {
     const responseTimeMs = Date.now() - startTime;
     const sourceName = this.name.toLowerCase() as ScraperSource;
     
-    // Log the result to the scraper logger
+    // Log the result to the scraper logger (async but not awaited)
     if (!error) {
       scraperLogger.logSuccess(sourceName, operation, data.length, responseTimeMs, {
         dataTypes: data.length > 0 ? Object.keys(data[0] as any).slice(0, 5) : []
-      });
+      }).catch(err => console.error(`[${this.name}] Failed to log success:`, err));
     } else {
-      scraperLogger.logError(sourceName, operation, error, responseTimeMs);
+      scraperLogger.logError(sourceName, operation, error, responseTimeMs)
+        .catch(err => console.error(`[${this.name}] Failed to log error:`, err));
     }
     
     return {

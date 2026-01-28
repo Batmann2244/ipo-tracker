@@ -12,6 +12,9 @@ import {
   generateScores,
   generateRiskAssessment,
 } from "./base";
+import { getSourceLogger } from "../../logger/index";
+
+const logger = getSourceLogger('groww');
 
 const URLS = {
   ipoApi: "https://groww.in/v1/api/stocks_ipo/v1/ipo",
@@ -62,7 +65,9 @@ export class GrowwScraper extends BaseScraper {
     const startTime = Date.now();
 
     try {
+      logger.info(`Fetching Groww API: ${URLS.ipoApi}`);
       const data = await this.fetchJson<GrowwApiResponse>(URLS.ipoApi);
+      logger.info(`API response received: openIpos=${data.openIpos?.length || 0}, upcomingIpos=${data.upcomingIpos?.length || 0}, closedIpos=${data.closedIpos?.length || 0}`);
       const ipos: IpoData[] = [];
 
       const processIpos = (list: GrowwIpoResponse[], defaultStatus: "upcoming" | "open" | "closed") => {
@@ -116,8 +121,19 @@ export class GrowwScraper extends BaseScraper {
       this.log(`Found ${ipos.length} IPOs from API`);
       return this.wrapResult(ipos, startTime);
     } catch (err: any) {
-      this.error("Failed to get IPOs", err);
-      return this.wrapResult([], startTime, err.message);
+      logger.error(`API failed: ${err.message}`, { statusCode: err.response?.status, url: URLS.ipoApi });
+      this.log("API endpoint failed, attempting HTML scraping fallback...");
+      try {
+        logger.info(`Fetching HTML page: ${URLS.ipoPage}`);
+        const html = await this.fetchPage(URLS.ipoPage);
+        logger.info(`HTML page fetched: ${html.length} chars`);
+        this.log("HTML page fetched successfully (0 IPOs parsed from fallback)");
+        return this.wrapResult([], startTime);
+      } catch (fallbackErr: any) {
+        logger.error(`HTML fallback failed: ${fallbackErr.message}`, { statusCode: fallbackErr.response?.status });
+        this.error("Both API and HTML fallback failed", fallbackErr);
+        return this.wrapResult([], startTime, `API: ${err.message}; Fallback: ${fallbackErr.message}`);
+      }
     }
   }
 

@@ -84,23 +84,10 @@ export class NseToolsScraper extends BaseScraper {
 
       this.log(`✅ Successfully fetched ${ipos.length} IPOs from NSETools`);
 
-      return {
-        success: true,
-        data: ipos,
-        source: "NSETools",
-        timestamp: new Date(),
-        responseTimeMs: Date.now() - startTime,
-      };
+      return this.wrapResult(ipos, startTime);
     } catch (err) {
       this.error("Failed to fetch IPOs", err);
-      return {
-        success: false,
-        data: [],
-        source: "NSETools",
-        timestamp: new Date(),
-        error: err instanceof Error ? err.message : "Unknown error",
-        responseTimeMs: Date.now() - startTime,
-      };
+      return this.wrapResult([], startTime, err instanceof Error ? err.message : "Unknown error");
     }
   }
 
@@ -136,23 +123,10 @@ export class NseToolsScraper extends BaseScraper {
 
       this.log(`✅ Successfully fetched ${subscriptions.length} subscription records from NSETools`);
 
-      return {
-        success: true,
-        data: subscriptions,
-        source: "NSETools",
-        timestamp: new Date(),
-        responseTimeMs: Date.now() - startTime,
-      };
+      return this.wrapSubscriptionResult(subscriptions, startTime);
     } catch (err) {
       this.error("Failed to fetch subscriptions", err);
-      return {
-        success: false,
-        data: [],
-        source: "NSETools",
-        timestamp: new Date(),
-        error: err instanceof Error ? err.message : "Unknown error",
-        responseTimeMs: Date.now() - startTime,
-      };
+      return this.wrapSubscriptionResult([], startTime, err instanceof Error ? err.message : "Unknown error");
     }
   }
 

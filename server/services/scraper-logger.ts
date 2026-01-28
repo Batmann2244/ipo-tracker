@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { scraperLogs } from "@shared/schema";
 import { desc, eq, and, gte } from "drizzle-orm";
+import { logger, getSourceLogger } from "../logger";
 
 export type ScraperSource = 'chittorgarh' | 'groww' | 'nse' | 'nsetools' | 'investorgain' | 'ipoalerts' | 'aggregator';
 export type ScraperOperation = 'ipos' | 'gmp' | 'subscription' | 'sync';
@@ -39,13 +40,23 @@ class ScraperLogger {
 
   async log(entry: LogEntry): Promise<void> {
     const message = this.formatMessage(entry);
+    const meta = {
+      source: entry.source,
+      operation: entry.operation,
+      recordsCount: entry.recordsCount,
+      responseTimeMs: entry.responseTimeMs,
+      metadata: entry.metadata,
+      errorMessage: entry.errorMessage,
+    };
     
+    const sourceLogger = getSourceLogger(entry.source);
+
     if (entry.status === 'success') {
-      console.log(`\x1b[32m${message}\x1b[0m`);
+      sourceLogger.info(message, meta);
     } else if (entry.status === 'error') {
-      console.error(`\x1b[31m${message}${entry.errorMessage ? ` - ${entry.errorMessage}` : ''}\x1b[0m`);
+      sourceLogger.error(message, meta);
     } else {
-      console.warn(`\x1b[33m${message}\x1b[0m`);
+      sourceLogger.warn(message, meta);
     }
 
     try {
@@ -59,7 +70,7 @@ class ScraperLogger {
         metadata: entry.metadata ? JSON.stringify(entry.metadata) : null,
       });
     } catch (err) {
-      console.error('[ScraperLogger] Failed to save log to database:', err);
+      logger.error("[ScraperLogger] Failed to save log to database", { err });
     }
   }
 

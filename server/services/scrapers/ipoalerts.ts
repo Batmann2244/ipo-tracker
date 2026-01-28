@@ -1,10 +1,13 @@
 import { IpoData, ScraperResult, normalizeSymbol } from "./base";
 import { scraperLogger } from "../scraper-logger";
+import { getSourceLogger } from "../../logger";
 
 const API_BASE = "https://api.ipoalerts.in";
 const API_KEY = process.env.IPOALERTS_API_KEY;
+const sourceLogger = getSourceLogger("ipoalerts");
 
 const DAILY_LIMIT = 25;
+// Free plan returns only 1 record per request, so we paginate through pages
 const MAX_PER_REQUEST = 1;
 
 interface UsageTracker {
@@ -77,7 +80,7 @@ interface IpoAlertsResponse {
 function resetDailyUsageIfNeeded(): void {
   const todayIst = getIstDateString();
   if (usageTracker.date !== todayIst) {
-    console.log(`[IPOAlerts] Resetting daily usage counter (new IST day: ${todayIst})`);
+    sourceLogger.info("Resetting daily usage counter", { todayIst });
     usageTracker = {
       date: todayIst,
       requestCount: 0,
@@ -131,11 +134,16 @@ async function fetchFromApi(endpoint: string): Promise<any> {
   }
 
   if (!canMakeRequest()) {
+    sourceLogger.warn("Daily request limit reached", {
+      limit: DAILY_LIMIT,
+      used: usageTracker.requestCount,
+    });
     throw new Error(`Daily request limit (${DAILY_LIMIT}) reached. Remaining: ${getRemainingRequests()}`);
   }
 
   const startTime = Date.now();
-  
+  sourceLogger.info("Requesting IPOAlerts endpoint", { endpoint });
+
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       headers: {
@@ -154,11 +162,24 @@ async function fetchFromApi(endpoint: string): Promise<any> {
 
     const data = await response.json();
     
-    console.log(`[IPOAlerts] Request successful (${responseTime}ms) - Daily usage: ${usageTracker.requestCount}/${DAILY_LIMIT}`);
+    sourceLogger.info("IPOAlerts request succeeded", {
+      endpoint,
+      responseTime,
+      usage: `${usageTracker.requestCount}/${DAILY_LIMIT}`,
+      status: response.status,
+    });
     
     return data;
   } catch (error) {
     const responseTime = Date.now() - startTime;
+    const status = (error as any)?.response?.status;
+    sourceLogger.error("IPOAlerts request failed", {
+      endpoint,
+      responseTime,
+      error: (error as any)?.message,
+      status,
+      usage: `${usageTracker.requestCount}/${DAILY_LIMIT}`,
+    });
     throw error;
   }
 }
@@ -229,28 +250,55 @@ function parseIpoData(ipo: IpoAlertsIpo): IpoData {
   };
 }
 
-async function getIposByStatus(status: 'open' | 'upcoming' | 'listed' | 'closed', isScheduled = false): Promise<ScraperResult<IpoData>> {
+async function getIposByStatus(
+  status: 'open' | 'upcoming' | 'listed' | 'closed',
+  isScheduled = false
+): Promise<ScraperResult<IpoData>> {
   const startTime = Date.now();
-  
+  const allIpos: IpoData[] = [];
+
   try {
-    const response = await fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}`) as IpoAlertsResponse;
-    
+    let page = 1;
+    let totalPages = 1;
+
+    while (page <= totalPages && canMakeRequest()) {
+      const response = await fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}&page=${page}`) as IpoAlertsResponse;
+
+      // Update pagination info
+      totalPages = response.meta?.totalPages || 1;
+
+      sourceLogger.info("IPOAlerts page received", {
+        status,
+        page,
+        totalPages,
+        ipos: response.ipos.length,
+        count: response.meta?.count,
+        countOnPage: response.meta?.countOnPage,
+        limit: response.meta?.limit,
+        info: response.meta?.info,
+      });
+
+      // Collect IPOs
+      allIpos.push(...response.ipos.map(parseIpoData));
+      page++;
+    }
+
     if (isScheduled && (status === 'open' || status === 'upcoming' || status === 'listed')) {
       markFetchCompleted(status);
     }
-    
-    const ipos = response.ipos.map(parseIpoData);
+
     const responseTime = Date.now() - startTime;
 
-    await scraperLogger.logSuccess('ipoalerts' as any, 'ipos', ipos.length, responseTime, {
+    await scraperLogger.logSuccess('ipoalerts' as any, 'ipos', allIpos.length, responseTime, {
       status,
       dailyUsage: usageTracker.requestCount,
       remaining: getRemainingRequests(),
+      totalPages,
     });
 
     return {
       success: true,
-      data: ipos,
+      data: allIpos,
       source: "ipoalerts",
       timestamp: new Date(),
       responseTimeMs: responseTime,
@@ -258,7 +306,7 @@ async function getIposByStatus(status: 'open' | 'upcoming' | 'listed' | 'closed'
   } catch (error) {
     const responseTime = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+
     await scraperLogger.logError('ipoalerts' as any, 'ipos', errorMessage, responseTime);
 
     return {
@@ -297,7 +345,7 @@ async function getScheduledIpos(): Promise<ScraperResult<IpoData>> {
     };
   }
 
-  console.log(`[IPOAlerts] Scheduled fetch: ${fetchType} IPOs`);
+  sourceLogger.info("Scheduled fetch", { fetchType });
   return getIposByStatus(fetchType, true);
 }
 
@@ -354,6 +402,7 @@ export const ipoAlertsScraper = {
   getOpenIpos,
   getUpcomingIpos,
   getListedIpos,
+  getIposByStatus,
   getScheduledIpos,
   getIpoDetails,
   getUsageStats,

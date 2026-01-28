@@ -16,6 +16,9 @@ import {
   generateScores,
   generateRiskAssessment,
 } from "./base";
+import { getSourceLogger } from "../../logger/index";
+
+const logger = getSourceLogger('chittorgarh');
 
 const URLS = {
   ipoList: "https://www.chittorgarh.com/ipo/ipo_list.asp",
@@ -99,16 +102,27 @@ export class ChittorgarhScraper extends BaseScraper {
   private parseIpoTable(html: string, ipoType: "mainboard" | "sme"): IpoData[] {
     const $ = cheerio.load(html);
     const ipos: IpoData[] = [];
+    
+    const tableCount = $("table").length;
+    logger.info(`Parsing HTML: ${tableCount} tables found, HTML length: ${html.length} chars`);
 
-    $("table").each((_, table) => {
-      $(table).find("tr").each((_, row) => {
+    $("table").each((tableIdx, table) => {
+      const rowCount = $(table).find("tr").length;
+      logger.info(`Table ${tableIdx}: ${rowCount} rows`);
+      
+      $(table).find("tr").each((rowIdx, row) => {
         const cells = $(row).find("td");
-        if (cells.length < 4) return;
+        if (cells.length < 4) {
+          if (rowIdx < 3) logger.info(`  Row ${rowIdx}: ${cells.length} cells (skipped - less than 4)`);
+          return;
+        }
 
         const companyName = cells.eq(0).text().trim();
         if (!companyName || companyName.length < 3) return;
         if (companyName.toLowerCase().includes("company") || companyName.toLowerCase().includes("ipo name")) return;
 
+        logger.info(`  Found company: ${companyName} (${cells.length} cells)`);
+        
         const symbol = normalizeSymbol(companyName);
 
         let openDate: string | null = null;
