@@ -10,6 +10,11 @@ import { growwScraper } from "./groww";
 import { investorGainScraper } from "./investorgain";
 import { nseScraper } from "./nse";
 import { nseToolsScraper } from "./nsetools";
+import { ipoAlertsScraper } from "./ipoalerts";
+import { bseScraper } from "./bse";
+import { ipoWatchScraper } from "./ipowatch";
+import { zeodhaScraper } from "./zerodha";
+import { investorgainApiScraper } from "./investorgain-api";
 import { scraperLogger, type ScraperSource, type ScraperOperation } from "../scraper-logger";
 
 export interface AggregatedIpoData extends IpoData {
@@ -43,7 +48,47 @@ export class ScraperAggregator {
     console.log(`[Aggregator] ${message}`);
   }
 
-  async getIpos(sources: string[] = ["investorgain", "nsetools", "groww", "chittorgarh"]): Promise<AggregatorResult<AggregatedIpoData>> {
+  // Validate IPO data to filter out corrupted/malformed records
+  private isValidIpoData(ipo: IpoData): boolean {
+    // Check if company name is reasonable length (not concatenated table data)
+    if (!ipo.companyName || ipo.companyName.length > 150) {
+      console.warn(`[Aggregator] Rejected IPO with invalid company name length: ${ipo.companyName?.substring(0, 50)}...`);
+      return false;
+    }
+
+    // Check for table headers in company name (sign of scraping error)
+    const invalidPatterns = [
+      /security.*name.*exchange.*platform/i,
+      /start.*date.*end.*date/i,
+      /offer.*price.*face.*value/i,
+      /issue.*status.*type.*of.*issue/i,
+      /mainboard.*sme.*forthcoming/i,
+    ];
+
+    for (const pattern of invalidPatterns) {
+      if (pattern.test(ipo.companyName)) {
+        console.warn(`[Aggregator] Rejected IPO with table header pattern: ${ipo.companyName.substring(0, 50)}...`);
+        return false;
+      }
+    }
+
+    // Check if symbol is reasonable
+    if (!ipo.symbol || ipo.symbol.length > 20) {
+      console.warn(`[Aggregator] Rejected IPO with invalid symbol: ${ipo.symbol}`);
+      return false;
+    }
+
+    // Check for multiple IPO names concatenated (contains multiple "LTD" or "LIMITED")
+    const ltdCount = (ipo.companyName.match(/\b(LTD|LIMITED)\b/gi) || []).length;
+    if (ltdCount > 2) {
+      console.warn(`[Aggregator] Rejected IPO with multiple company names: ${ipo.companyName.substring(0, 50)}...`);
+      return false;
+    }
+
+    return true;
+  }
+
+  async getIpos(sources: string[] = ["investorgain", "nsetools", "groww", "chittorgarh", "ipoalerts", "bse", "ipowatch", "zerodha"]): Promise<AggregatorResult<AggregatedIpoData>> {
     this.log("Fetching IPOs from multiple sources...");
     const results: ScraperResult<IpoData>[] = [];
 
@@ -54,6 +99,10 @@ export class ScraperAggregator {
     if (sources.includes("groww")) tasks.push(growwScraper.getIpos());
     if (sources.includes("chittorgarh")) tasks.push(chittorgarhScraper.getIpos());
     if (sources.includes("nse")) tasks.push(nseScraper.getIpos());
+    if (sources.includes("ipoalerts")) tasks.push(ipoAlertsScraper.getOpenIpos());
+    if (sources.includes("bse")) tasks.push(bseScraper.getIpos());
+    if (sources.includes("ipowatch")) tasks.push(ipoWatchScraper.getIpos());
+    if (sources.includes("zerodha")) tasks.push(zeodhaScraper.getIpos());
 
     const settled = await Promise.allSettled(tasks);
 
@@ -69,6 +118,11 @@ export class ScraperAggregator {
       if (!result.success) continue;
 
       for (const ipo of result.data) {
+        // Validate IPO data before adding to aggregation
+        if (!this.isValidIpoData(ipo)) {
+          continue;
+        }
+
         const existing = symbolMap.get(ipo.symbol);
 
         if (!existing) {

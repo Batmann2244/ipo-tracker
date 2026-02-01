@@ -5,7 +5,8 @@ import { IpoTable } from "@/components/IpoTable";
 import { IpoDetailModal } from "@/components/IpoDetailModal";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Search, Loader2, LayoutGrid, Table, TrendingUp, Clock, CheckCircle2, ArrowUpRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Search, Loader2, LayoutGrid, Table, TrendingUp, Clock, CheckCircle2, ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import type { Ipo } from "@shared/schema";
 
 type ViewMode = "cards" | "table";
@@ -15,6 +16,9 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [showSme, setShowSme] = useState(true);
   const [selectedIpo, setSelectedIpo] = useState<Ipo | null>(null);
+  const [upcomingPage, setUpcomingPage] = useState(0);
+  const [listedPage, setListedPage] = useState(0);
+  const ITEMS_PER_PAGE = 9;
 
   const { data: ipos, isLoading } = useIpos();
 
@@ -172,10 +176,33 @@ export default function Dashboard() {
                 </h2>
               </div>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {upcomingIpos.map((ipo) => (
+                {upcomingIpos.slice(upcomingPage * ITEMS_PER_PAGE, (upcomingPage + 1) * ITEMS_PER_PAGE).map((ipo) => (
                   <IpoCard key={ipo.id} ipo={ipo} onClick={() => setSelectedIpo(ipo)} />
                 ))}
               </div>
+              {Math.ceil(upcomingIpos.length / ITEMS_PER_PAGE) > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-6">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setUpcomingPage(Math.max(0, upcomingPage - 1))}
+                    disabled={upcomingPage === 0}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {upcomingPage + 1} of {Math.ceil(upcomingIpos.length / ITEMS_PER_PAGE)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setUpcomingPage(Math.min(Math.ceil(upcomingIpos.length / ITEMS_PER_PAGE) - 1, upcomingPage + 1))}
+                    disabled={upcomingPage === Math.ceil(upcomingIpos.length / ITEMS_PER_PAGE) - 1}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </section>
           )}
 
@@ -191,10 +218,33 @@ export default function Dashboard() {
                 </h2>
               </div>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {listedIpos.map((ipo) => (
+                {listedIpos.slice(listedPage * ITEMS_PER_PAGE, (listedPage + 1) * ITEMS_PER_PAGE).map((ipo) => (
                   <IpoCard key={ipo.id} ipo={ipo} onClick={() => setSelectedIpo(ipo)} />
                 ))}
               </div>
+              {Math.ceil(listedIpos.length / ITEMS_PER_PAGE) > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-6">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setListedPage(Math.max(0, listedPage - 1))}
+                    disabled={listedPage === 0}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {listedPage + 1} of {Math.ceil(listedIpos.length / ITEMS_PER_PAGE)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setListedPage(Math.min(Math.ceil(listedIpos.length / ITEMS_PER_PAGE) - 1, listedPage + 1))}
+                    disabled={listedPage === Math.ceil(listedIpos.length / ITEMS_PER_PAGE) - 1}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </section>
           )}
 

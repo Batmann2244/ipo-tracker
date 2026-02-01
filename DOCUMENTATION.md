@@ -3,6 +3,7 @@
 ## Table of Contents
 
 1. [Introduction](#introduction)
+   - [Data Sources & Disclaimers](#data-sources--disclaimers)
 2. [Features Overview](#features-overview)
 3. [How IPO Scoring Works](#how-ipo-scoring-works)
 4. [User Guide](#user-guide)
@@ -29,6 +30,33 @@ IPO Analyzer is a comprehensive web application designed to help investors track
 - Review the complete DRHP (Draft Red Herring Prospectus) or RHP (Red Herring Prospectus)
 - Consult SEBI-registered investment advisors
 - Conduct their own due diligence before making any investment decisions
+
+### Data Sources & Disclaimers
+
+IPO Analyzer aggregates data from multiple publicly accessible sources to provide comprehensive IPO information. The platform is **not affiliated with NSE, BSE, SEBI, or any other regulatory authority.**
+
+**Data Accuracy & Timeliness:**
+- All data is aggregated from publicly available sources
+- IPO Analyzer does not claim ownership or guarantee accuracy of this data
+- Information should not be used for real-time trading or automated decision-making
+- Data may have delays or inconsistencies depending on source availability
+
+**GMP Data Disclaimer:**
+- Grey Market Premium (GMP) data is collected from publicly available market sources
+- GMP is offered for general informational purposes only
+- It should not be construed as financial or investment advice
+- Users are advised to independently verify GMP data before making investment decisions
+
+**Data Sources Used:**
+- **NSE (National Stock Exchange)** - Official exchange IPO calendar and real-time data
+- **BSE (Bombay Stock Exchange)** - Official exchange IPO listings (Beta since Jan 2, 2026)
+- **Chittorgarh** - Live subscription status and GMP data
+- **InvestorGain** - Real-time bidding and GMP information
+- **Groww** - IPO calendar and pricing data
+- **IPOWatch** - Grey Market Premium trends
+- **IPOAlerts API** - Comprehensive IPO master data
+- **NSETools** - NSE data aggregation library
+- **Zerodha** - Data enrichment (secondary source)
 
 ---
 
@@ -383,6 +411,84 @@ Scrapes live bidding data from InvestorGain.com.
 **Location:** `server/services/scrapers/nse.ts`
 
 Direct scraping of NSE website as an additional source.
+
+#### 6. BSE Scraper
+
+**Location:** `server/services/scrapers/bse.ts`
+
+Scrapes data from BSE (Bombay Stock Exchange) public issues page.
+
+**What it provides:**
+- Mainboard, SME, and DEBT IPO listings
+- IPO dates (start/end)
+- Price ranges and status information
+
+**Data Source:**
+- Official BSE Public Issues Page: `https://www.bseindia.com/markets/PublicIssues/IPOIssues_new.aspx`
+
+**Status:** Public beta as of January 2, 2026. Data reliability and availability may vary. All IPO objects sourced from BSE have `source: "bse"` field.
+
+#### 7. IPOAlerts Scraper
+
+**Location:** `server/services/scrapers/ipoalerts.ts`
+
+Aggregates data from the IPOAlerts API service.
+
+**What it provides:**
+- Comprehensive IPO master data
+- Current and upcoming IPO schedules
+- IPO details including prospectus URLs
+- Historical data for listed IPOs
+
+**API Integration:**
+- Base URL: `https://api.ipoalerts.in`
+- Requires API key via `IPOALERTS_API_KEY` environment variable
+- Implements daily usage tracking and rate limiting
+
+**Daily Limits:**
+- Free plan: 25 requests/day (6 requests/min)
+- Max 20 IPOs per request for efficiency
+
+#### 8. IPOWatch Scraper
+
+**Location:** `server/services/scrapers/ipowatch.ts`
+
+Scrapes Grey Market Premium and IPO data from IPOWatch.
+
+**What it provides:**
+- Grey Market Premium (GMP) values and trends
+- Expected listing gains
+- SME vs Mainboard classification
+
+**Data Source:**
+- IPOWatch GMP Page: `https://ipowatch.in/ipo-grey-market-premium-latest-ipo-gmp/`
+
+#### 9. NSETools Scraper
+
+**Location:** `server/services/scrapers/nsetools.ts`
+
+Comprehensive data aggregation from NSE using NSETools library.
+
+**What it provides:**
+- Complete IPO calendar
+- Detailed IPO specifications
+- Real-time subscription data
+- GMP and listing information
+
+### Data Source Priority & Reliability
+
+**Primary Sources (Most Reliable):**
+1. NSE (National Stock Exchange) - Official exchange data
+2. BSE (Bombay Stock Exchange) - Official exchange data
+3. NSETools - Aggregates official NSE APIs
+
+**Enrichment Sources (Real-time Data):**
+1. Chittorgarh - Live subscription updates
+2. InvestorGain - Real-time bidding data
+3. Groww - Calendar and pricing
+4. IPOWatch - GMP trends
+5. IPOAlerts - Comprehensive IPO details
+6. Zerodha - Data enrichment (secondary source)
 
 ### Aggregator System
 

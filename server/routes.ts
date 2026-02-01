@@ -10,16 +10,16 @@ import { calculateIpoScore } from "./services/scoring";
 import { scrapeAndTransformIPOs, testScraper, generatePeerCompanies, generateGmpHistory, generateFundUtilization } from "./services/scraper";
 import { analyzeIpo } from "./services/ai-analysis";
 import { sendIpoEmailAlert } from "./services/email";
-import { 
-  startScheduler, 
-  stopScheduler, 
-  getSchedulerStatus, 
-  triggerManualPoll, 
-  getRecentAlerts, 
-  clearAlerts 
+import {
+  startScheduler,
+  stopScheduler,
+  getSchedulerStatus,
+  triggerManualPoll,
+  getRecentAlerts,
+  clearAlerts
 } from "./services/data-scheduler";
-import { 
-  fetchAggregatedSubscription, 
+import {
+  fetchAggregatedSubscription,
   scrapeGmpFromMultipleSources,
   scrapeGrowwCalendar,
   isBiddingHours
@@ -27,11 +27,11 @@ import {
 import { ipoAlertsScraper } from "./services/scrapers/ipoalerts";
 import apiV1Router from "./routes/api-v1";
 import { registerScraperDebugRoutes } from "./routes/scraper-debug";
-import { 
-  createApiKey, 
-  getUserApiKeys, 
-  revokeApiKey, 
-  getUserSubscription, 
+import {
+  createApiKey,
+  getUserApiKeys,
+  revokeApiKey,
+  getUserSubscription,
   createOrUpdateSubscription,
   getUsageStats,
   getTodayUsageCount,
@@ -44,7 +44,7 @@ export async function registerRoutes(
   httpServer: Server, // Accept httpServer as parameter
   app: Express
 ): Promise<Server> { // Return Promise<Server>
-  
+
   // Setup Auth
   await setupAuth(app);
   registerAuthRoutes(app);
@@ -66,13 +66,13 @@ export async function registerRoutes(
   app.use('/api/v1', apiV1Router);
 
   // === Subscription & API Key Management Routes ===
-  
+
   // Get current user's subscription
   app.get('/api/subscription', requireAuth, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const subscription = await getUserSubscription(userId);
-      
+
       if (!subscription) {
         // Create free tier subscription if none exists
         const newSub = await createOrUpdateSubscription(userId, 'free');
@@ -81,7 +81,7 @@ export async function registerRoutes(
           tierLimits: TIER_LIMITS.free,
         });
       }
-      
+
       const tierLimits = TIER_LIMITS[subscription.tier as keyof typeof TIER_LIMITS] || TIER_LIMITS.free;
       res.json({
         ...subscription,
@@ -98,15 +98,15 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const { tier } = req.body;
-      
+
       if (!['free', 'basic', 'pro', 'enterprise'].includes(tier)) {
         return res.status(400).json({ error: 'Invalid tier' });
       }
-      
+
       // In production, this would be triggered by Stripe webhook
       const subscription = await createOrUpdateSubscription(userId, tier);
       const tierLimits = TIER_LIMITS[tier as keyof typeof TIER_LIMITS];
-      
+
       res.json({
         ...subscription,
         tierLimits,
@@ -123,7 +123,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const keys = await getUserApiKeys(userId);
-      
+
       // Add usage info for each key
       const keysWithUsage = await Promise.all(keys.map(async (key) => {
         const todayUsage = await getTodayUsageCount(key.id);
@@ -140,7 +140,7 @@ export async function registerRoutes(
           dailyLimit: limits.apiCallsPerDay,
         };
       }));
-      
+
       res.json(keysWithUsage);
     } catch (error) {
       console.error('Error fetching API keys:', error);
@@ -153,25 +153,25 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const { name } = req.body;
-      
+
       if (!name || typeof name !== 'string' || name.length < 1) {
         return res.status(400).json({ error: 'Key name is required' });
       }
-      
+
       // Check if user already has too many keys (max 5 for free, 10 for paid)
       const existingKeys = await getUserApiKeys(userId);
       const subscription = await getUserSubscription(userId);
       const maxKeys = subscription?.tier === 'free' ? 2 : 10;
-      
+
       if (existingKeys.length >= maxKeys) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: `Maximum ${maxKeys} API keys allowed for your tier`,
           upgradeMessage: subscription?.tier === 'free' ? 'Upgrade to create more API keys' : undefined,
         });
       }
-      
+
       const { apiKey, plainKey } = await createApiKey(userId, name);
-      
+
       res.json({
         message: 'API key created successfully',
         key: {
@@ -195,17 +195,17 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const keyId = parseInt(req.params.id);
-      
+
       if (isNaN(keyId)) {
         return res.status(400).json({ error: 'Invalid key ID' });
       }
-      
+
       const success = await revokeApiKey(keyId, userId);
-      
+
       if (!success) {
         return res.status(404).json({ error: 'API key not found or already revoked' });
       }
-      
+
       res.json({ message: 'API key revoked successfully' });
     } catch (error) {
       console.error('Error revoking API key:', error);
@@ -218,16 +218,16 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const days = Math.min(parseInt(req.query.days as string) || 30, 90);
-      
+
       const stats = await getUsageStats(userId, days);
-      
+
       res.json({
         stats,
         summary: {
           totalCalls: stats.reduce((sum, s) => sum + (s.callCount || 0), 0),
           totalErrors: stats.reduce((sum, s) => sum + (s.errorCount || 0), 0),
-          avgResponseTime: stats.length > 0 
-            ? stats.reduce((sum, s) => sum + (s.avgResponseTimeMs || 0), 0) / stats.length 
+          avgResponseTime: stats.length > 0
+            ? stats.reduce((sum, s) => sum + (s.avgResponseTimeMs || 0), 0) / stats.length
             : 0,
         },
       });
@@ -320,14 +320,14 @@ export async function registerRoutes(
     try {
       const { ipoId } = api.watchlist.add.input.parse(req.body);
       const userId = (req.user as any).claims.sub;
-      
+
       const ipo = await storage.getIpo(ipoId);
       if (!ipo) {
         return res.status(404).json({ message: "IPO not found" });
       }
 
       const item = await storage.addToWatchlist(userId, ipoId);
-      
+
       // Generate timeline events for the watchlisted IPO
       const existingTimeline = await storage.getIpoTimeline(ipoId);
       if (existingTimeline.length === 0 && ipo.expectedDate) {
@@ -341,7 +341,7 @@ export async function registerRoutes(
           { type: "refund", offsetDays: 9, description: "Refund initiated for unallotted" },
           { type: "listing", offsetDays: 10, description: "Shares listed on exchange" },
         ];
-        
+
         for (const event of events) {
           const eventDate = new Date(baseDate);
           eventDate.setDate(eventDate.getDate() + event.offsetDays);
@@ -354,11 +354,11 @@ export async function registerRoutes(
           });
         }
       }
-      
+
       res.status(201).json(item);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           message: err.errors[0].message,
           field: err.errors[0].path.join('.')
         });
@@ -382,9 +382,9 @@ export async function registerRoutes(
       const result = await testScraper();
       res.json(result);
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : "Unknown error" 
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
       });
     }
   });
@@ -392,29 +392,29 @@ export async function registerRoutes(
   app.post("/api/admin/sync", requireAuth, async (req, res) => {
     try {
       console.log("🔄 Starting IPO data sync from multiple sources...");
-      
+
       const scrapedIpos = await scrapeAndTransformIPOs();
-      
+
       console.log("🔄 Fetching InvestorGain data for GMP and IDs...");
       const igResult = await investorGainScraper.getIpos();
       const igIpos = igResult.success ? igResult.data : [];
       console.log(`📊 InvestorGain returned ${igIpos.length} IPOs`);
-      
+
       const igMap = new Map<string, typeof igIpos[0]>();
       for (const igIpo of igIpos) {
         const normalizedName = igIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
         igMap.set(normalizedName, igIpo);
         igMap.set(igIpo.symbol.toLowerCase(), igIpo);
       }
-      
+
       let created = 0;
       let updated = 0;
       let analyticsAdded = 0;
-      
+
       for (const ipo of scrapedIpos) {
         const normalizedName = ipo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
         const igMatch = igMap.get(normalizedName) || igMap.get(ipo.symbol.toLowerCase());
-        
+
         if (igMatch) {
           ipo.investorGainId = igMatch.investorGainId ?? null;
           ipo.gmp = igMatch.gmp ?? ipo.gmp;
@@ -422,17 +422,17 @@ export async function registerRoutes(
         }
         const existing = await storage.getIpoBySymbol(ipo.symbol);
         const savedIpo = await storage.upsertIpo(ipo);
-        
+
         if (existing) {
           updated++;
         } else {
           created++;
         }
-        
+
         // Generate analytics data for each IPO
         const ipoId = savedIpo.id;
         const sector = savedIpo.sector || "Industrial";
-        
+
         // Check if analytics data exists, if not generate it
         const existingPeers = await storage.getPeerCompanies(ipoId);
         if (existingPeers.length === 0) {
@@ -442,7 +442,7 @@ export async function registerRoutes(
           }
           analyticsAdded++;
         }
-        
+
         // Add GMP history entry
         if (savedIpo.gmp !== null) {
           await storage.addGmpHistory({
@@ -451,7 +451,7 @@ export async function registerRoutes(
             gmpPercentage: savedIpo.gmp * 0.8, // Approximate percentage
           });
         }
-        
+
         // Generate fund utilization if not exists
         const existingFunds = await storage.getFundUtilization(ipoId);
         if (existingFunds.length === 0) {
@@ -460,15 +460,15 @@ export async function registerRoutes(
             await storage.addFundUtilization(fund);
           }
         }
-        
+
         // Generate timeline events for all IPOs
         const existingTimeline = await storage.getIpoTimeline(ipoId);
         if (existingTimeline.length === 0) {
           // Use expected date if available, otherwise use a future date (30 days from now)
-          const baseDate = savedIpo.expectedDate 
-            ? new Date(savedIpo.expectedDate) 
+          const baseDate = savedIpo.expectedDate
+            ? new Date(savedIpo.expectedDate)
             : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-          
+
           const events = [
             { type: "drhp_filing", offsetDays: -30, description: "DRHP filed with SEBI" },
             { type: "price_band", offsetDays: -2, description: "Price band announced" },
@@ -478,7 +478,7 @@ export async function registerRoutes(
             { type: "refund", offsetDays: 9, description: "Refund initiated for unallotted" },
             { type: "listing", offsetDays: 10, description: "Shares listed on exchange" },
           ];
-          
+
           for (const event of events) {
             const eventDate = new Date(baseDate);
             eventDate.setDate(eventDate.getDate() + event.offsetDays);
@@ -492,9 +492,9 @@ export async function registerRoutes(
           }
         }
       }
-      
+
       console.log(`✅ Sync complete: ${created} created, ${updated} updated, ${analyticsAdded} analytics generated`);
-      
+
       res.json({
         success: true,
         message: `Synced ${scrapedIpos.length} IPOs with analytics data`,
@@ -505,9 +505,9 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Sync failed:", error);
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : "Sync failed" 
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Sync failed"
       });
     }
   });
@@ -515,7 +515,7 @@ export async function registerRoutes(
   app.get("/api/admin/stats", requireAuth, async (req, res) => {
     const count = await storage.getIpoCount();
     const ipos = await storage.getIpos();
-    
+
     const stats = {
       total: count,
       upcoming: ipos.filter(i => i.status === "upcoming").length,
@@ -524,39 +524,39 @@ export async function registerRoutes(
       listed: ipos.filter(i => i.status === "listed").length,
       withScores: ipos.filter(i => i.overallScore !== null).length,
       avgScore: ipos.filter(i => i.overallScore !== null)
-        .reduce((sum, i) => sum + (i.overallScore || 0), 0) / 
+        .reduce((sum, i) => sum + (i.overallScore || 0), 0) /
         (ipos.filter(i => i.overallScore !== null).length || 1),
     };
-    
+
     res.json(stats);
   });
 
   app.post("/api/admin/sync/clean", requireAuth, async (req, res) => {
     try {
       console.log("🧹 Starting clean sync - marking old IPOs as listed...");
-      
+
       const markedCount = await storage.markAllAsListed();
       console.log(`Marked ${markedCount} IPOs as listed`);
-      
+
       console.log("🔄 Fetching fresh IPO data...");
       const scrapedIpos = await scrapeAndTransformIPOs();
-      
+
       let created = 0;
       let updated = 0;
-      
+
       for (const ipo of scrapedIpos) {
         const existing = await storage.getIpoBySymbol(ipo.symbol);
         await storage.upsertIpo(ipo);
-        
+
         if (existing) {
           updated++;
         } else {
           created++;
         }
       }
-      
+
       console.log(`✅ Clean sync complete: ${created} created, ${updated} updated`);
-      
+
       res.json({
         success: true,
         message: `Clean sync complete`,
@@ -567,9 +567,9 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Clean sync failed:", error);
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : "Clean sync failed" 
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Clean sync failed"
       });
     }
   });
@@ -595,9 +595,9 @@ export async function registerRoutes(
       const result = await triggerManualPoll();
       res.json({ success: true, ...result });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : "Poll failed" 
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Poll failed"
       });
     }
   });
@@ -723,9 +723,9 @@ export async function registerRoutes(
         data,
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : "Failed to fetch subscription data" 
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to fetch subscription data"
       });
     }
   });
@@ -739,9 +739,9 @@ export async function registerRoutes(
         data,
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : "Failed to fetch GMP data" 
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to fetch GMP data"
       });
     }
   });
@@ -755,9 +755,9 @@ export async function registerRoutes(
         data,
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : "Failed to fetch calendar data" 
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to fetch calendar data"
       });
     }
   });
@@ -771,7 +771,7 @@ export async function registerRoutes(
       }
 
       const analysis = await analyzeIpo(ipo);
-      
+
       // Update IPO with AI analysis
       const updated = await storage.updateIpo(ipo.id, {
         aiSummary: analysis.summary,
@@ -785,9 +785,9 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("AI analysis error:", error);
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : "Analysis failed" 
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Analysis failed"
       });
     }
   });
@@ -851,9 +851,9 @@ export async function registerRoutes(
 
       res.json({ success: true, results });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : "Alert failed" 
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Alert failed"
       });
     }
   });
@@ -915,9 +915,9 @@ export async function registerRoutes(
         const normalizedDbName = dbIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
         const match = iposResult.data.find(igIpo => {
           const normalizedIgName = igIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
-          return normalizedDbName.includes(normalizedIgName) || 
-                 normalizedIgName.includes(normalizedDbName) ||
-                 normalizedDbName === normalizedIgName;
+          return normalizedDbName.includes(normalizedIgName) ||
+            normalizedIgName.includes(normalizedDbName) ||
+            normalizedDbName === normalizedIgName;
         });
 
         if (match && match.investorGainId) {
@@ -949,11 +949,11 @@ export async function registerRoutes(
     try {
       const ipoId = Number(req.params.id);
       const ipo = await storage.getIpo(ipoId);
-      
+
       if (!ipo || !ipo.investorGainId) {
         return res.json([]);
       }
-      
+
       const history = await investorGainScraper.getGmpHistory(ipo.investorGainId);
       res.json(history);
     } catch (error) {
@@ -966,11 +966,11 @@ export async function registerRoutes(
     try {
       const ipoId = Number(req.params.id);
       const ipo = await storage.getIpo(ipoId);
-      
+
       if (!ipo || !ipo.investorGainId) {
         return res.json(null);
       }
-      
+
       const subscription = await investorGainScraper.getSubscriptionDetails(ipo.investorGainId);
       res.json(subscription);
     } catch (error) {
@@ -983,11 +983,11 @@ export async function registerRoutes(
     try {
       const ipoId = Number(req.params.id);
       const ipo = await storage.getIpo(ipoId);
-      
+
       if (!ipo) {
         return res.status(404).json({ error: "IPO not found" });
       }
-      
+
       res.json({
         biddingStartDate: ipo.expectedDate,
         biddingEndDate: null,
@@ -1043,9 +1043,13 @@ export async function registerRoutes(
 
   // Auto-sync from scraper on startup if database is empty
   await autoSyncOnStartup();
-  
+
   // Always try to update with InvestorGain data
   await syncInvestorGainData();
+
+  // Start the scheduler automatically
+  console.log("⏰ Auto-starting data scheduler...");
+  startScheduler();
 
   return httpServer;
 }
@@ -1054,24 +1058,24 @@ async function autoSyncOnStartup() {
   const existingIpos = await storage.getIpos();
   if (existingIpos.length === 0) {
     console.log("Database empty - attempting to fetch real IPO data from Chittorgarh...");
-    
+
     try {
       const scrapedIpos = await scrapeAndTransformIPOs();
-      
+
       if (scrapedIpos.length > 0) {
         for (const ipo of scrapedIpos) {
           const savedIpo = await storage.createIpo(ipo);
-          
+
           // Generate analytics data
           const ipoId = savedIpo.id;
           const sector = savedIpo.sector || "Industrial";
-          
+
           // Generate peer companies
           const peers = generatePeerCompanies(ipoId, sector);
           for (const peer of peers) {
             await storage.addPeerCompany(peer);
           }
-          
+
           // Generate GMP history (7 days of sample data)
           if (savedIpo.gmp !== null) {
             const gmpHistoryData = generateGmpHistory(ipoId);
@@ -1079,18 +1083,18 @@ async function autoSyncOnStartup() {
               await storage.addGmpHistory(entry);
             }
           }
-          
+
           // Generate fund utilization
           const funds = generateFundUtilization(ipoId);
           for (const fund of funds) {
             await storage.addFundUtilization(fund);
           }
-          
+
           // Generate timeline events
-          const baseDate = savedIpo.expectedDate 
-            ? new Date(savedIpo.expectedDate) 
+          const baseDate = savedIpo.expectedDate
+            ? new Date(savedIpo.expectedDate)
             : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-          
+
           const events = [
             { type: "drhp_filing", offsetDays: -30, description: "DRHP filed with SEBI" },
             { type: "price_band", offsetDays: -2, description: "Price band announced" },
@@ -1100,7 +1104,7 @@ async function autoSyncOnStartup() {
             { type: "refund", offsetDays: 9, description: "Refund initiated for unallotted" },
             { type: "listing", offsetDays: 10, description: "Shares listed on exchange" },
           ];
-          
+
           for (const event of events) {
             const eventDate = new Date(baseDate);
             eventDate.setDate(eventDate.getDate() + event.offsetDays);
@@ -1128,27 +1132,27 @@ async function syncInvestorGainData() {
   try {
     console.log("🔄 Syncing InvestorGain data...");
     const igResult = await investorGainScraper.getIpos();
-    
+
     if (!igResult.success || igResult.data.length === 0) {
       console.log("⚠️ No InvestorGain data available");
       return;
     }
-    
+
     console.log(`📊 Found ${igResult.data.length} IPOs from InvestorGain`);
-    
+
     const dbIpos = await storage.getIpos();
     let updatedCount = 0;
-    
+
     for (const dbIpo of dbIpos) {
       const normalizedDbName = dbIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
-      
+
       const match = igResult.data.find(igIpo => {
         const normalizedIgName = igIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
-        return normalizedDbName.includes(normalizedIgName) || 
-               normalizedIgName.includes(normalizedDbName) ||
-               normalizedDbName === normalizedIgName;
+        return normalizedDbName.includes(normalizedIgName) ||
+          normalizedIgName.includes(normalizedDbName) ||
+          normalizedDbName === normalizedIgName;
       });
-      
+
       if (match) {
         const updates: any = {};
         if (match.investorGainId && !dbIpo.investorGainId) {
@@ -1160,14 +1164,14 @@ async function syncInvestorGainData() {
         if (match.basisOfAllotmentDate && !dbIpo.basisOfAllotmentDate) {
           updates.basisOfAllotmentDate = match.basisOfAllotmentDate;
         }
-        
+
         if (Object.keys(updates).length > 0) {
           await storage.updateIpo(dbIpo.id, updates);
           updatedCount++;
         }
       }
     }
-    
+
     console.log(`✅ Updated ${updatedCount} IPOs with InvestorGain data`);
   } catch (error) {
     console.error("❌ InvestorGain sync failed:", error);

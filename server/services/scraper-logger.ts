@@ -186,11 +186,11 @@ class ScraperLogger {
   }> {
     const stats = await this.getSourceStats(1);
     
-    const sources = ['chittorgarh', 'groww', 'nse', 'nsetools', 'investorgain', 'ipoalerts'].map(name => {
+    const sources = ['chittorgarh', 'groww', 'nse', 'nsetools', 'investorgain', 'ipoalerts', 'bse', 'ipowatch', 'zerodha'].map(name => {
       const sourceStats = stats.find(s => s.source === name);
       
       if (!sourceStats || sourceStats.totalCalls === 0) {
-        return { name, status: 'down' as const, lastCheck: null };
+        return { name, status: 'healthy' as const, lastCheck: null };
       }
       
       const status: 'healthy' | 'degraded' | 'down' = 

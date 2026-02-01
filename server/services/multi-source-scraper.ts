@@ -80,26 +80,26 @@ function parseSubscriptionValue(text: string): number | null {
 export async function scrapeChittorgarhSubscription(): Promise<SubscriptionData[]> {
   console.log("📊 [Chittorgarh] Fetching subscription data...");
   const url = "https://www.chittorgarh.com/report/ipo-subscription-status-live-mainboard-sme/21/";
-  
+
   try {
     const html = await fetchPage(url);
     const $ = cheerio.load(html);
     const results: SubscriptionData[] = [];
-    
+
     $("table").find("tr").each((_, row) => {
       const cells = $(row).find("td");
       if (cells.length < 5) return;
-      
+
       const companyName = cells.eq(0).text().trim();
       if (!companyName || companyName.length < 3) return;
       if (companyName.toLowerCase().includes("company") || companyName.toLowerCase().includes("ipo name")) return;
-      
+
       const symbol = normalizeSymbol(companyName);
       const qib = parseSubscriptionValue(cells.eq(1).text());
       const hni = parseSubscriptionValue(cells.eq(2).text());
       const retail = parseSubscriptionValue(cells.eq(3).text());
       const total = parseSubscriptionValue(cells.eq(4).text());
-      
+
       if (symbol && symbol.length >= 3) {
         results.push({
           symbol,
@@ -113,7 +113,7 @@ export async function scrapeChittorgarhSubscription(): Promise<SubscriptionData[
         });
       }
     });
-    
+
     console.log(`✅ [Chittorgarh] Found subscription data for ${results.length} IPOs`);
     return results;
   } catch (error) {
@@ -125,26 +125,26 @@ export async function scrapeChittorgarhSubscription(): Promise<SubscriptionData[
 export async function scrapeInvestorGainSubscription(): Promise<SubscriptionData[]> {
   console.log("📊 [InvestorGain] Fetching subscription data...");
   const url = "https://www.investorgain.com/report/ipo-subscription-live/333/all/";
-  
+
   try {
     const html = await fetchPage(url);
     const $ = cheerio.load(html);
     const results: SubscriptionData[] = [];
-    
+
     $("table").find("tr").each((_, row) => {
       const cells = $(row).find("td");
       if (cells.length < 5) return;
-      
+
       const companyName = cells.eq(0).text().trim();
       if (!companyName || companyName.length < 3) return;
       if (companyName.toLowerCase().includes("company") || companyName.toLowerCase().includes("ipo")) return;
-      
+
       const symbol = normalizeSymbol(companyName);
       const qib = parseSubscriptionValue(cells.eq(1).text());
       const hni = parseSubscriptionValue(cells.eq(2).text());
       const retail = parseSubscriptionValue(cells.eq(3).text());
       const total = parseSubscriptionValue(cells.eq(4).text());
-      
+
       if (symbol && symbol.length >= 3) {
         results.push({
           symbol,
@@ -158,7 +158,7 @@ export async function scrapeInvestorGainSubscription(): Promise<SubscriptionData
         });
       }
     });
-    
+
     console.log(`✅ [InvestorGain] Found subscription data for ${results.length} IPOs`);
     return results;
   } catch (error) {
@@ -169,7 +169,7 @@ export async function scrapeInvestorGainSubscription(): Promise<SubscriptionData
 
 export async function scrapeNseBidDetails(): Promise<SubscriptionData[]> {
   console.log("📊 [NSE] Fetching bid details...");
-  
+
   try {
     const response = await axios.get("https://www.nseindia.com/api/ipo-current-issue", {
       headers: {
@@ -178,15 +178,15 @@ export async function scrapeNseBidDetails(): Promise<SubscriptionData[]> {
       },
       timeout: 30000,
     });
-    
+
     const results: SubscriptionData[] = [];
     const data = response.data;
-    
+
     if (Array.isArray(data)) {
       for (const ipo of data) {
         const companyName = ipo.companyName || ipo.symbol || "";
         const symbol = normalizeSymbol(companyName);
-        
+
         if (symbol && symbol.length >= 3) {
           results.push({
             symbol,
@@ -201,7 +201,7 @@ export async function scrapeNseBidDetails(): Promise<SubscriptionData[]> {
         }
       }
     }
-    
+
     console.log(`✅ [NSE] Found bid data for ${results.length} IPOs`);
     return results;
   } catch (error) {
@@ -210,38 +210,41 @@ export async function scrapeNseBidDetails(): Promise<SubscriptionData[]> {
   }
 }
 
+import { ipoWatchScraper } from "./scrapers/ipowatch";
+
 export async function scrapeGmpFromMultipleSources(): Promise<GmpData[]> {
   console.log("💹 Fetching GMP from multiple sources...");
-  
+
   const gmpUrls = [
     "https://www.chittorgarh.com/report/grey-market-premium-upcoming-ipo-mainboard/104/",
     "https://www.chittorgarh.com/report/ipo-grey-market-premium-latest-mainboard-sme/90/",
   ];
-  
+
   const allGmpData: GmpData[] = [];
-  
+
+  // 1. Scrape Chittorgarh (Primary Source)
   for (const url of gmpUrls) {
     try {
       const html = await fetchPage(url);
       const $ = cheerio.load(html);
-      
+
       $("table").find("tr").each((_, row) => {
         const cells = $(row).find("td");
         if (cells.length < 2) return;
-        
+
         const companyName = cells.eq(0).text().trim();
         if (!companyName || companyName.length < 3) return;
         if (companyName.toLowerCase().includes("company") || companyName.toLowerCase().includes("ipo name")) return;
-        
+
         const symbol = normalizeSymbol(companyName);
         const gmpText = cells.eq(1).text().trim();
         const expectedText = cells.eq(2)?.text()?.trim() || "";
-        
+
         const gmpMatch = gmpText.match(/[+-]?\d+/);
         const gmp = gmpMatch ? parseInt(gmpMatch[0]) : 0;
         const expectedMatch = expectedText.match(/\d+/);
         const expectedListing = expectedMatch ? parseInt(expectedMatch[0]) : null;
-        
+
         if (symbol && symbol.length >= 3) {
           const existing = allGmpData.find(g => g.symbol === symbol);
           if (!existing) {
@@ -257,30 +260,60 @@ export async function scrapeGmpFromMultipleSources(): Promise<GmpData[]> {
           }
         }
       });
-      
-      if (allGmpData.length > 0) break;
+
+      // If we got good data from one Chittorgarh page, we don't necessarily need the other redundant one
+      // unless the first one was empty.
+      if (allGmpData.length > 5) break;
     } catch (error) {
       console.log(`GMP fetch from ${url} failed, trying next...`);
     }
   }
-  
-  console.log(`✅ Found GMP data for ${allGmpData.length} IPOs`);
+
+  // 2. Scrape IPO Watch (Secondary Source)
+  try {
+    console.log("💹 [IPOWatch] Fetching GMP data...");
+    const ipoWatchResult = await ipoWatchScraper.getGmp();
+
+    if (ipoWatchResult.success && ipoWatchResult.data.length > 0) {
+      let addedCount = 0;
+      for (const item of ipoWatchResult.data) {
+        const existing = allGmpData.find(g => g.symbol === item.symbol);
+        if (!existing) {
+          allGmpData.push({
+            symbol: item.symbol,
+            companyName: item.companyName,
+            gmp: item.gmp,
+            expectedListing: item.expectedListing,
+            trend: "stable",
+            source: "ipowatch",
+            timestamp: new Date()
+          });
+          addedCount++;
+        }
+      }
+      console.log(`✅ [IPOWatch] Added ${addedCount} new GMP entries`);
+    }
+  } catch (err) {
+    console.error("[IPOWatch] GMP fetch failed:", err);
+  }
+
+  console.log(`✅ Found GMP data for ${allGmpData.length} IPOs total`);
   return allGmpData;
 }
 
 export async function scrapeGrowwCalendar(): Promise<IpoCalendarData[]> {
   console.log("📅 [Groww] Fetching IPO calendar...");
-  
+
   try {
     const html = await fetchPage("https://groww.in/ipo");
     const $ = cheerio.load(html);
     const results: IpoCalendarData[] = [];
-    
+
     $("[class*='ipoCard'], [class*='ipo-card']").each((_, card) => {
       const companyName = $(card).find("[class*='name'], h3, h4").first().text().trim();
       const priceText = $(card).find("[class*='price']").text().trim();
       const dateText = $(card).find("[class*='date']").text().trim();
-      
+
       if (companyName && companyName.length > 3) {
         const symbol = normalizeSymbol(companyName);
         results.push({
@@ -296,7 +329,7 @@ export async function scrapeGrowwCalendar(): Promise<IpoCalendarData[]> {
         });
       }
     });
-    
+
     console.log(`✅ [Groww] Found ${results.length} IPOs in calendar`);
     return results;
   } catch (error) {
@@ -307,7 +340,7 @@ export async function scrapeGrowwCalendar(): Promise<IpoCalendarData[]> {
 
 export async function fetchLivePriceFromNse(symbol: string): Promise<LivePriceData | null> {
   console.log(`📈 [NSE] Fetching live price for ${symbol}...`);
-  
+
   try {
     const response = await axios.get(`https://www.nseindia.com/api/quote-equity?symbol=${encodeURIComponent(symbol)}`, {
       headers: {
@@ -316,9 +349,9 @@ export async function fetchLivePriceFromNse(symbol: string): Promise<LivePriceDa
       },
       timeout: 15000,
     });
-    
+
     const data = response.data;
-    
+
     if (data && data.priceInfo) {
       return {
         symbol,
@@ -331,7 +364,7 @@ export async function fetchLivePriceFromNse(symbol: string): Promise<LivePriceDa
         timestamp: new Date(),
       };
     }
-    
+
     return null;
   } catch (error) {
     console.error(`[NSE] Price fetch failed for ${symbol}:`, error);
@@ -355,19 +388,19 @@ export interface AggregatedSubscriptionData {
 
 export async function fetchAggregatedSubscription(previousData?: Map<string, number>): Promise<AggregatedSubscriptionData[]> {
   console.log("🔄 Fetching aggregated subscription data from multiple sources...");
-  
+
   const [chittorgarhData, investorGainData, nseData] = await Promise.all([
     scrapeChittorgarhSubscription().catch(() => []),
     scrapeInvestorGainSubscription().catch(() => []),
     scrapeNseBidDetails().catch(() => []),
   ]);
-  
+
   const aggregatedMap = new Map<string, AggregatedSubscriptionData>();
-  
+
   const processSources = (data: SubscriptionData[]) => {
     for (const item of data) {
       const existing = aggregatedMap.get(item.symbol);
-      
+
       if (existing) {
         existing.sources.push(item.source);
         if (item.qib !== null) existing.qib = existing.qib ?? item.qib;
@@ -377,7 +410,7 @@ export async function fetchAggregatedSubscription(previousData?: Map<string, num
       } else {
         const previousTotal = previousData?.get(item.symbol) ?? null;
         const delta = item.total !== null && previousTotal !== null ? item.total - previousTotal : null;
-        
+
         aggregatedMap.set(item.symbol, {
           symbol: item.symbol,
           companyName: item.companyName,
@@ -394,11 +427,11 @@ export async function fetchAggregatedSubscription(previousData?: Map<string, num
       }
     }
   };
-  
+
   processSources(chittorgarhData);
   processSources(investorGainData);
   processSources(nseData);
-  
+
   aggregatedMap.forEach((data) => {
     if (data.sources.length >= 3) {
       data.confidence = "high";
@@ -406,10 +439,10 @@ export async function fetchAggregatedSubscription(previousData?: Map<string, num
       data.confidence = "medium";
     }
   });
-  
+
   const results = Array.from(aggregatedMap.values());
   console.log(`✅ Aggregated subscription data for ${results.length} IPOs from ${new Set([...chittorgarhData, ...investorGainData, ...nseData].map(d => d.source)).size} sources`);
-  
+
   return results;
 }
 
@@ -429,7 +462,7 @@ export function checkAlertThresholds(
   previousGmpMap?: Map<string, number>
 ): AlertTrigger[] {
   const alerts: AlertTrigger[] = [];
-  
+
   for (const sub of subscriptionData) {
     if (sub.total !== null) {
       if (sub.total >= 20) {
@@ -453,7 +486,7 @@ export function checkAlertThresholds(
           timestamp: new Date(),
         });
       }
-      
+
       if (sub.delta !== null && sub.delta >= 5) {
         alerts.push({
           type: "subscription_threshold",
@@ -467,13 +500,13 @@ export function checkAlertThresholds(
       }
     }
   }
-  
+
   for (const gmp of gmpData) {
     const previousGmp = previousGmpMap?.get(gmp.symbol);
     if (previousGmp !== undefined && gmp.gmp !== previousGmp) {
       const change = gmp.gmp - previousGmp;
       const changePercent = previousGmp !== 0 ? (change / Math.abs(previousGmp)) * 100 : 0;
-      
+
       if (Math.abs(changePercent) >= 10) {
         alerts.push({
           type: "gmp_spike",
@@ -487,7 +520,7 @@ export function checkAlertThresholds(
       }
     }
   }
-  
+
   return alerts;
 }
 
@@ -495,17 +528,17 @@ export function isBiddingHours(): boolean {
   const now = new Date();
   const istOffset = 5.5 * 60 * 60 * 1000;
   const istTime = new Date(now.getTime() + istOffset);
-  
+
   const hours = istTime.getUTCHours();
   const minutes = istTime.getUTCMinutes();
   const totalMinutes = hours * 60 + minutes;
-  
+
   const startMinutes = 9 * 60 + 15;
   const endMinutes = 17 * 60 + 30;
-  
+
   const dayOfWeek = istTime.getUTCDay();
   const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
-  
+
   return isWeekday && totalMinutes >= startMinutes && totalMinutes <= endMinutes;
 }
 

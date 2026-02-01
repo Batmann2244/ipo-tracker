@@ -12,6 +12,7 @@ import {
   generateScores,
   generateRiskAssessment,
 } from "./base";
+import puppeteer from "puppeteer";
 import { getSourceLogger } from "../../logger/index";
 
 const logger = getSourceLogger('groww');
@@ -56,6 +57,14 @@ interface GrowwApiResponse {
   closedIpos: GrowwIpoResponse[];
 }
 
+/**
+ * Groww Scraper with Puppeteer
+ * 
+ * ✅ UPDATED: Now uses Puppeteer for browser automation (Feb 2026)
+ * 
+ * Groww's IPO API is deprecated, and the website uses JavaScript rendering.
+ * We use Puppeteer to render the page and extract data from the live DOM.
+ */
 export class GrowwScraper extends BaseScraper {
   constructor() {
     super("Groww");
@@ -63,77 +72,124 @@ export class GrowwScraper extends BaseScraper {
 
   async getIpos(): Promise<ScraperResult<IpoData>> {
     const startTime = Date.now();
+    let browser;
 
     try {
-      logger.info(`Fetching Groww API: ${URLS.ipoApi}`);
-      const data = await this.fetchJson<GrowwApiResponse>(URLS.ipoApi);
-      logger.info(`API response received: openIpos=${data.openIpos?.length || 0}, upcomingIpos=${data.upcomingIpos?.length || 0}, closedIpos=${data.closedIpos?.length || 0}`);
-      const ipos: IpoData[] = [];
+      logger.info("🚀 Launching Puppeteer browser for Groww...");
 
-      const processIpos = (list: GrowwIpoResponse[], defaultStatus: "upcoming" | "open" | "closed") => {
-        for (const ipo of list || []) {
-          const symbol = normalizeSymbol(ipo.companyName);
+      browser = await puppeteer.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--disable-gpu',
+          // '--window-size=1920,1080', // Not needed for JSON extraction
+          '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        ]
+      });
 
-          const openDate = ipo.bidStartDate ? parseDate(ipo.bidStartDate) : null;
-          const closeDate = ipo.bidEndDate ? parseDate(ipo.bidEndDate) : null;
-          const listingDate = ipo.listingDate ? parseDate(ipo.listingDate) : null;
+      const page = await browser.newPage();
 
-          const priceMin = ipo.issuePrice?.minIssuePrice || null;
-          const priceMax = ipo.issuePrice?.maxIssuePrice || null;
-          const priceRange = priceMin && priceMax
-            ? `₹${priceMin} - ₹${priceMax}`
-            : priceMin ? `₹${priceMin}` : "TBA";
+      // Set extra headers
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      });
 
-          const issueSizeCrores = ipo.totalIssueSize
-            ? ipo.totalIssueSize / 10000000
-            : null;
-          const issueSize = issueSizeCrores
-            ? `₹${issueSizeCrores.toFixed(2)} Cr`
-            : "TBA";
+      logger.info(`Navigating to: ${URLS.ipoPage}`);
+      await page.goto(URLS.ipoPage, {
+        waitUntil: 'networkidle2',
+        timeout: 45000
+      });
 
-          let status: "upcoming" | "open" | "closed" | "listed" = defaultStatus;
-          if (ipo.ipoStatus === "LISTED") status = "listed";
+      // Wait a bit for hydration script to be fully available (usually instant, but safety first)
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
-          const ipoType = ipo.ipoType?.toLowerCase() === "sme" ? "sme" : "mainboard";
+      // Extract data from Next.js hydration script
+      const ipoData = await page.evaluate(() => {
+        try {
+          const nextDataEl = document.getElementById('__NEXT_DATA__');
+          if (!nextDataEl) return null;
 
-          ipos.push({
-            symbol,
-            companyName: ipo.companyName,
-            openDate,
-            closeDate,
-            listingDate,
-            priceRange,
-            priceMin,
-            priceMax,
-            lotSize: ipo.lotSize || null,
-            issueSize,
-            issueSizeCrores,
-            status,
-            ipoType,
-          });
+          const json = JSON.parse(nextDataEl.textContent || '{}');
+          return json.props?.pageProps;
+        } catch (e) {
+          return null;
         }
-      };
+      });
 
-      processIpos(data.openIpos, "open");
-      processIpos(data.upcomingIpos, "upcoming");
-      processIpos(data.closedIpos, "closed");
+      await browser.close();
+      browser = null;
 
-      this.log(`Found ${ipos.length} IPOs from API`);
-      return this.wrapResult(ipos, startTime);
-    } catch (err: any) {
-      logger.error(`API failed: ${err.message}`, { statusCode: err.response?.status, url: URLS.ipoApi });
-      this.log("API endpoint failed, attempting HTML scraping fallback...");
-      try {
-        logger.info(`Fetching HTML page: ${URLS.ipoPage}`);
-        const html = await this.fetchPage(URLS.ipoPage);
-        logger.info(`HTML page fetched: ${html.length} chars`);
-        this.log("HTML page fetched successfully (0 IPOs parsed from fallback)");
-        return this.wrapResult([], startTime);
-      } catch (fallbackErr: any) {
-        logger.error(`HTML fallback failed: ${fallbackErr.message}`, { statusCode: fallbackErr.response?.status });
-        this.error("Both API and HTML fallback failed", fallbackErr);
-        return this.wrapResult([], startTime, `API: ${err.message}; Fallback: ${fallbackErr.message}`);
+      const ipos: any[] = [];
+
+      if (ipoData) {
+        logger.info("✅ Found Next.js data! Parsing...");
+
+        // Helper to map Groww's JSON structure
+        const mapGrowwIpo = (item: any, status: 'open' | 'upcoming' | 'closed' | 'listed') => {
+          return {
+            companyName: item.companyName || item.searchId,
+            symbol: item.symbol || item.searchId,
+            openDate: item.openingDate || item.openDate,
+            closeDate: item.closingDate || item.closeDate,
+            listingDate: item.listingDate,
+            priceRange: item.priceBand || (item.minPrice ? `₹${item.minPrice}-₹${item.maxPrice}` : null),
+            priceMin: item.minPrice,
+            priceMax: item.maxPrice,
+            issueSize: item.issueSize,
+            status: status
+          };
+        };
+
+        // 1. Open IPOs
+        if (Array.isArray(ipoData.openDataList)) {
+          ipoData.openDataList.forEach((item: any) => ipos.push(mapGrowwIpo(item, 'open')));
+        }
+
+        // 2. Upcoming IPOs
+        if (Array.isArray(ipoData.upcomingDataList)) {
+          ipoData.upcomingDataList.forEach((item: any) => ipos.push(mapGrowwIpo(item, 'upcoming')));
+        }
+
+        // 3. Closed IPOs
+        if (Array.isArray(ipoData.closedDataList)) {
+          ipoData.closedDataList.forEach((item: any) => ipos.push(mapGrowwIpo(item, 'closed')));
+        }
+      } else {
+        logger.warn("⚠️ JSON extraction failed (no __NEXT_DATA__).");
       }
+
+      // Convert to standardized IpoData format
+      const formattedIpos: IpoData[] = ipos.map(ipo => {
+        const { min, max } = parsePriceRange(ipo.priceRange || "");
+
+        return {
+          symbol: normalizeSymbol(ipo.companyName),
+          companyName: ipo.companyName,
+          openDate: parseDate(ipo.openDate),
+          closeDate: parseDate(ipo.closeDate),
+          listingDate: parseDate(ipo.listingDate),
+          priceRange: ipo.priceRange || "TBA",
+          priceMin: min || ipo.priceMin,
+          priceMax: max || ipo.priceMax,
+          lotSize: ipo.lotSize ? parseInt(String(ipo.lotSize).replace(/,/g, '')) : null,
+          issueSize: ipo.issueSize || "TBA",
+          issueSizeCrores: parseIssueSize(ipo.issueSize),
+          status: ipo.status,
+          ipoType: "mainboard"
+        };
+      });
+
+      this.log(`Found ${formattedIpos.length} IPOs via JSON extraction`);
+      return this.wrapResult(formattedIpos, startTime);
+
+    } catch (err: any) {
+      if (browser) await browser.close().catch(() => { });
+      this.error("Puppeteer scraping failed", err);
+      return this.wrapResult([], startTime, err.message);
     }
   }
 

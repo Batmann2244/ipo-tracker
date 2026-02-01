@@ -7,6 +7,7 @@ import {
   normalizeSymbol,
   parseDate,
 } from "./base";
+import axios, { AxiosRequestConfig } from 'axios';
 
 const URLS = {
   currentIpos: "https://www.nseindia.com/api/ipo-current-issue",
@@ -14,10 +15,12 @@ const URLS = {
   pastIpos: "https://www.nseindia.com/api/ipo-past-issues",
 };
 
-const NSE_HEADERS = {
+const NSE_BASE_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Accept": "application/json, text/plain, */*",
   "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Connection": "keep-alive",
   "Referer": "https://www.nseindia.com/market-data/all-upcoming-issues-ipo",
   "Origin": "https://www.nseindia.com",
 };
@@ -48,22 +51,57 @@ interface NseCurrentIpo {
 
 export class NseScraper extends BaseScraper {
   private cookies: string = "";
+  private cookieJar: Map<string, string> = new Map();
 
   constructor() {
     super("NSE");
   }
 
+  // CRITICAL FIX 1: Properly capture and store cookies
   private async initSession(): Promise<void> {
     try {
-      const response = await this.fetchPage("https://www.nseindia.com", {
-        headers: NSE_HEADERS,
+      this.log("Initializing NSE session...");
+
+      const response = await axios.get("https://www.nseindia.com", {
+        headers: NSE_BASE_HEADERS,
         maxRedirects: 5,
+        validateStatus: () => true, // Accept any status
       });
 
-      this.log("NSE session initialized");
-    } catch (err) {
+      // CRITICAL: Extract cookies from response
+      const setCookieHeaders = response.headers['set-cookie'];
+
+      if (setCookieHeaders) {
+        setCookieHeaders.forEach((cookieStr: string) => {
+          const [nameValue] = cookieStr.split(';');
+          const [name, value] = nameValue.split('=');
+          if (name && value) {
+            this.cookieJar.set(name.trim(), value.trim());
+          }
+        });
+
+        // Build cookie string for subsequent requests
+        this.cookies = Array.from(this.cookieJar.entries())
+          .map(([name, value]) => `${name}=${value}`)
+          .join('; ');
+
+        this.log(`NSE session initialized with ${this.cookieJar.size} cookies`);
+      } else {
+        this.log("Warning: No cookies received from NSE homepage");
+      }
+
+    } catch (err: any) {
       this.error("Failed to init NSE session", err);
+      throw err;
     }
+  }
+
+  // CRITICAL FIX 2: Use cookies in all API requests
+  private getHeadersWithCookies(): Record<string, string> {
+    return {
+      ...NSE_BASE_HEADERS,
+      ...(this.cookies ? { "Cookie": this.cookies } : {}),
+    };
   }
 
   async getIpos(): Promise<ScraperResult<IpoData>> {
@@ -81,14 +119,21 @@ export class NseScraper extends BaseScraper {
 
       if (currentIpos.status === "fulfilled") {
         ipos.push(...currentIpos.value);
+        this.log(`Current IPOs: ${currentIpos.value.length}`);
+      } else {
+        this.error("Failed to fetch current IPOs", currentIpos.reason);
       }
 
       if (upcomingIpos.status === "fulfilled") {
         ipos.push(...upcomingIpos.value);
+        this.log(`Upcoming IPOs: ${upcomingIpos.value.length}`);
+      } else {
+        this.error("Failed to fetch upcoming IPOs", upcomingIpos.reason);
       }
 
-      this.log(`Found ${ipos.length} IPOs from NSE`);
+      this.log(`Total found: ${ipos.length} IPOs from NSE`);
       return this.wrapResult(ipos, startTime);
+
     } catch (err: any) {
       this.error("Failed to get IPOs from NSE", err);
       return this.wrapResult([], startTime, err.message);
@@ -97,26 +142,71 @@ export class NseScraper extends BaseScraper {
 
   private async fetchCurrentIpos(): Promise<IpoData[]> {
     try {
-      const data = await this.fetchJson<NseCurrentIpo[]>(URLS.currentIpos, {
-        headers: NSE_HEADERS,
+      // Use axios directly with proper cookies
+      const response = await axios.get<NseCurrentIpo[]>(URLS.currentIpos, {
+        headers: this.getHeadersWithCookies(),
+        timeout: 15000,
+        validateStatus: (status) => status < 500,
       });
 
+      if (response.status === 401 || response.status === 403) {
+        this.log("Authentication failed, reinitializing session");
+        await this.initSession();
+
+        // Retry with new cookies
+        const retryResponse = await axios.get<NseCurrentIpo[]>(URLS.currentIpos, {
+          headers: this.getHeadersWithCookies(),
+          timeout: 15000,
+        });
+
+        return (retryResponse.data || []).map(ipo => this.transformNseIpo(ipo, "open"));
+      }
+
+      const data = response.data;
+      if (!Array.isArray(data) || data.length === 0) {
+        this.log(`NSE Current IPOs empty or invalid: ${JSON.stringify(data).substring(0, 500)}`);
+      }
+
       return (data || []).map(ipo => this.transformNseIpo(ipo, "open"));
-    } catch (err) {
-      this.error("Failed to fetch current IPOs", err);
+
+    } catch (err: any) {
+      this.error("Failed to fetch current IPOs", {
+        message: err.message,
+        status: err.response?.status,
+        data: err.response?.data
+      });
       return [];
     }
   }
 
   private async fetchUpcomingIpos(): Promise<IpoData[]> {
     try {
-      const data = await this.fetchJson<NseIpoData[]>(URLS.upcomingIpos, {
-        headers: NSE_HEADERS,
+      const response = await axios.get<NseIpoData[]>(URLS.upcomingIpos, {
+        headers: this.getHeadersWithCookies(),
+        timeout: 15000,
+        validateStatus: (status) => status < 500,
       });
 
-      return (data || []).map(ipo => this.transformNseIpo(ipo, "upcoming"));
-    } catch (err) {
-      this.error("Failed to fetch upcoming IPOs", err);
+      if (response.status === 401 || response.status === 403) {
+        this.log("Authentication failed for upcoming IPOs");
+        await this.initSession();
+
+        const retryResponse = await axios.get<NseIpoData[]>(URLS.upcomingIpos, {
+          headers: this.getHeadersWithCookies(),
+          timeout: 15000,
+        });
+
+        return (retryResponse.data || []).map(ipo => this.transformNseIpo(ipo, "upcoming"));
+      }
+
+      return (response.data || []).map(ipo => this.transformNseIpo(ipo, "upcoming"));
+
+    } catch (err: any) {
+      this.error("Failed to fetch upcoming IPOs", {
+        message: err.message,
+        status: err.response?.status,
+        data: err.response?.data
+      });
       return [];
     }
   }
@@ -160,13 +250,14 @@ export class NseScraper extends BaseScraper {
     try {
       await this.initSession();
 
-      const data = await this.fetchJson<NseCurrentIpo[]>(URLS.currentIpos, {
-        headers: NSE_HEADERS,
+      const response = await axios.get<NseCurrentIpo[]>(URLS.currentIpos, {
+        headers: this.getHeadersWithCookies(),
+        timeout: 15000,
       });
 
       const subscriptions: SubscriptionData[] = [];
 
-      for (const ipo of data || []) {
+      for (const ipo of response.data || []) {
         if (ipo.totalSubscription) {
           subscriptions.push({
             symbol: ipo.symbol?.toUpperCase() || normalizeSymbol(ipo.companyName),
@@ -183,6 +274,7 @@ export class NseScraper extends BaseScraper {
 
       this.log(`Found ${subscriptions.length} subscription records from NSE`);
       return this.wrapResult(subscriptions, startTime);
+
     } catch (err: any) {
       this.error("Failed to get subscriptions from NSE", err);
       return this.wrapResult([], startTime, err.message);

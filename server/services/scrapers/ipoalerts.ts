@@ -7,7 +7,8 @@ const API_KEY = process.env.IPOALERTS_API_KEY;
 const sourceLogger = getSourceLogger("ipoalerts");
 
 const DAILY_LIMIT = 25;
-// Free plan returns only 1 record per request, so we paginate through pages
+// Updated based on API requirements - limit must be <= 1
+// Fixed: API enforces "Limit must be less than or equal to 1"
 const MAX_PER_REQUEST = 1;
 
 interface UsageTracker {
@@ -119,7 +120,7 @@ function getScheduledFetchType(): 'open' | 'upcoming' | 'listed' | null {
   if (timeValue >= 840 && timeValue < 900) {
     if (lastFetchDateMap.get('listed') !== todayIst) return 'listed';
   }
-  
+
   return null;
 }
 
@@ -161,14 +162,14 @@ async function fetchFromApi(endpoint: string): Promise<any> {
     }
 
     const data = await response.json();
-    
+
     sourceLogger.info("IPOAlerts request succeeded", {
       endpoint,
       responseTime,
       usage: `${usageTracker.requestCount}/${DAILY_LIMIT}`,
       status: response.status,
     });
-    
+
     return data;
   } catch (error) {
     const responseTime = Date.now() - startTime;
@@ -188,7 +189,7 @@ function parseIpoData(ipo: IpoAlertsIpo): IpoData {
   const priceRange = ipo.priceRange || "TBA";
   let priceMin: number | null = null;
   let priceMax: number | null = null;
-  
+
   if (priceRange && priceRange !== "TBA") {
     const priceMatch = priceRange.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/);
     if (priceMatch) {
@@ -208,7 +209,7 @@ function parseIpoData(ipo: IpoAlertsIpo): IpoData {
     case 'open': status = 'open'; break;
     case 'closed': status = 'closed'; break;
     case 'listed': status = 'listed'; break;
-    case 'upcoming': 
+    case 'upcoming':
     case 'announced':
     default: status = 'upcoming';
   }
@@ -334,7 +335,7 @@ async function getListedIpos(): Promise<ScraperResult<IpoData>> {
 
 async function getScheduledIpos(): Promise<ScraperResult<IpoData>> {
   const fetchType = getScheduledFetchType();
-  
+
   if (!fetchType) {
     return {
       success: true,
@@ -351,11 +352,11 @@ async function getScheduledIpos(): Promise<ScraperResult<IpoData>> {
 
 async function getIpoDetails(identifier: string): Promise<ScraperResult<IpoData>> {
   const startTime = Date.now();
-  
+
   try {
     const response = await fetchFromApi(`/ipos/${identifier}`);
     const ipo = response.ipo as IpoAlertsIpo;
-    
+
     const ipoData = parseIpoData(ipo);
     const responseTime = Date.now() - startTime;
 
@@ -374,7 +375,7 @@ async function getIpoDetails(identifier: string): Promise<ScraperResult<IpoData>
   } catch (error) {
     const responseTime = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+
     await scraperLogger.logError('ipoalerts' as any, 'ipos', errorMessage, responseTime);
 
     return {

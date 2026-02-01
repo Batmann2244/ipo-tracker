@@ -26,6 +26,7 @@ import {
   nseScraper,
   scraperAggregator,
 } from "../services/scrapers";
+import { ipoAlertsScraper } from "../services/scrapers/ipoalerts";
 
 export function registerScraperDebugRoutes(app: Express) {
   /**
@@ -135,9 +136,9 @@ export function registerScraperDebugRoutes(app: Express) {
           avgSourcesPerIpo:
             result.data.length > 0
               ? (
-                  result.data.reduce((sum, i) => sum + i.sources.length, 0) /
-                  result.data.length
-                ).toFixed(2)
+                result.data.reduce((sum, i) => sum + i.sources.length, 0) /
+                result.data.length
+              ).toFixed(2)
               : 0,
         },
       };
@@ -161,11 +162,11 @@ export function registerScraperDebugRoutes(app: Express) {
       const sources = (req.query.sources as string)
         ?.split(",")
         .map((s) => s.trim()) || [
-        "nsetools",
-        "chittorgarh",
-        "groww",
-        "investorgain",
-      ];
+          "nsetools",
+          "chittorgarh",
+          "groww",
+          "investorgain",
+        ];
 
       console.log(`📊 Fetching subscriptions from sources:`, sources);
       const startTime = Date.now();
@@ -185,9 +186,9 @@ export function registerScraperDebugRoutes(app: Express) {
           avgSourcesPerRecord:
             result.data.length > 0
               ? (
-                  result.data.reduce((sum, s) => sum + s.sources.length, 0) /
-                  result.data.length
-                ).toFixed(2)
+                result.data.reduce((sum, s) => sum + s.sources.length, 0) /
+                result.data.length
+              ).toFixed(2)
               : 0,
         },
       };
@@ -401,6 +402,65 @@ export function registerScraperDebugRoutes(app: Express) {
       res.status(500).json({
         error: "Failed to fetch from source",
         message: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  /**
+   * Test IPO Alerts API
+   * GET /api/debug/scrapers/ipoalerts/test
+   */
+  app.get("/api/debug/scrapers/ipoalerts/test", async (req, res) => {
+    try {
+      console.log("🧪 Testing IPO Alerts API...");
+      const startTime = Date.now();
+
+      // Check if API key is configured
+      if (!process.env.IPOALERTS_API_KEY) {
+        return res.status(400).json({
+          success: false,
+          error: "IPOALERTS_API_KEY not configured in .env file"
+        });
+      }
+
+      // Get usage stats
+      const usage = ipoAlertsScraper.getUsageStats();
+      console.log(`📊 IPO Alerts Usage: ${usage.used}/${usage.limit} (${usage.remaining} remaining)`);
+
+      // Test fetching open IPOs
+      const result = await ipoAlertsScraper.getOpenIpos();
+
+      const response = {
+        timestamp: new Date(),
+        success: result.success,
+        apiKey: "Configured ✅",
+        usage: {
+          used: usage.used,
+          remaining: usage.remaining,
+          limit: usage.limit,
+          date: usage.date
+        },
+        data: {
+          count: result.data?.length || 0,
+          sampleIPO: result.data?.[0]?.companyName || null
+        },
+        responseTimeMs: result.responseTimeMs,
+        totalTime: Date.now() - startTime,
+        error: result.error || null
+      };
+
+      if (result.success) {
+        console.log(`✅ IPO Alerts API working! Found ${result.data.length} open IPOs`);
+      } else {
+        console.log(`❌ IPO Alerts API failed: ${result.error}`);
+      }
+
+      res.json(response);
+    } catch (error) {
+      console.error("❌ IPO Alerts test failed:", error);
+      res.status(500).json({
+        error: "Failed to test IPO Alerts API",
+        message: error instanceof Error ? error.message : "Unknown error"
       });
     }
   });

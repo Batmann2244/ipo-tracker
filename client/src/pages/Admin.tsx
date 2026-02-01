@@ -75,6 +75,9 @@ const DATA_SOURCES = [
   { id: 'groww', name: 'Groww', description: 'IPO calendar, subscription data, and listing info', type: 'Calendar & Subscription' },
   { id: 'nsetools', name: 'NSE Tools', description: 'Official NSE data for mainboard IPOs', type: 'Exchange Data' },
   { id: 'nse', name: 'NSE Direct', description: 'Direct NSE API for real-time data', type: 'Exchange Data' },
+  { id: 'bse', name: 'BSE', description: 'Mainboard, SME, and DEBT IPO listings (Beta since Jan 2, 2026)', type: 'Exchange Data' },
+  { id: 'ipowatch', name: 'IPO Watch', description: 'Grey Market Premium trends and expected listing gains', type: 'GMP & Trends' },
+  { id: 'zerodha', name: 'Zerodha', description: 'Data enrichment and market insights for IPO analysis', type: 'Data Enrichment' },
 ];
 
 export default function Admin() {
@@ -241,6 +244,37 @@ export default function Admin() {
     },
   });
 
+  const importIpoAlertsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/ipoalerts/import-all");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({
+          title: "Import Complete",
+          description: `Imported ${data.imported} IPOs from IPO Alerts API`,
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/ipos"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/ipoalerts/usage"] });
+        refetchStats();
+      } else {
+        toast({
+          title: "Import Failed",
+          description: data.error || "Unknown error",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Import Failed",
+        description: error.message || "Unknown error",
+        variant: "destructive",
+      });
+    },
+  });
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -351,6 +385,20 @@ export default function Admin() {
                 )}
                 Clean Sync (Reset Data)
               </Button>
+
+              <Button
+                onClick={() => importIpoAlertsMutation.mutate()}
+                disabled={importIpoAlertsMutation.isPending}
+                className="bg-orange-600 hover:bg-orange-700 text-white"
+                data-testid="button-import-ipoalerts"
+              >
+                {importIpoAlertsMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Database className="mr-2 h-4 w-4" />
+                )}
+                Import from IPO Alerts
+              </Button>
             </div>
 
             {testMutation.data && (
@@ -424,7 +472,7 @@ export default function Admin() {
               {DATA_SOURCES.map(source => {
                 const { health, stat } = getSourceStatus(source.id);
                 return (
-                  <div 
+                  <div
                     key={source.id}
                     className="p-4 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
                     onClick={() => setSelectedSource(selectedSource === source.id ? null : source.id)}
@@ -457,7 +505,7 @@ export default function Admin() {
                         {selectedSource === source.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </div>
                     </div>
-                    
+
                     {selectedSource === source.id && stat && (
                       <div className="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="text-center">
@@ -586,13 +634,12 @@ export default function Admin() {
             <CardContent>
               <div className="max-h-96 overflow-y-auto space-y-2">
                 {recentLogs?.map(log => (
-                  <div 
-                    key={log.id} 
-                    className={`p-3 rounded-lg border text-sm ${
-                      log.status === 'success' ? 'border-green-500/30 bg-green-500/5' :
-                      log.status === 'error' ? 'border-red-500/30 bg-red-500/5' : 
-                      'border-yellow-500/30 bg-yellow-500/5'
-                    }`}
+                  <div
+                    key={log.id}
+                    className={`p-3 rounded-lg border text-sm ${log.status === 'success' ? 'border-green-500/30 bg-green-500/5' :
+                      log.status === 'error' ? 'border-red-500/30 bg-red-500/5' :
+                        'border-yellow-500/30 bg-yellow-500/5'
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">

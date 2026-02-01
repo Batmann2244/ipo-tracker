@@ -1,4 +1,5 @@
 import axios, { AxiosRequestConfig } from "axios";
+import * as puppeteer from "puppeteer";
 import type { Logger } from "winston";
 import { getSourceLogger } from "../../logger";
 import { scraperLogger, type ScraperSource, type ScraperOperation } from "../scraper-logger";
@@ -16,12 +17,12 @@ export interface IpoData {
   companyName: string;
   description?: string;
   sector?: string;
-  
+
   // Dates
   openDate: string | null;
   closeDate: string | null;
   listingDate: string | null;
-  
+
   // Price & Offer Details
   priceRange: string;
   priceMin: number | null;
@@ -33,11 +34,11 @@ export interface IpoData {
   totalShares?: string;
   freshIssue?: number;
   ofsRatio?: number;
-  
+
   // Status
   status: "upcoming" | "open" | "closed" | "listed";
   ipoType: "mainboard" | "sme";
-  
+
   // Financial Metrics
   revenueGrowth?: number;
   ebitdaMargin?: number;
@@ -45,12 +46,12 @@ export interface IpoData {
   roe?: number;
   roce?: number;
   debtToEquity?: number;
-  
+
   // Valuation Metrics
   peRatio?: number;
   pbRatio?: number;
   sectorPeMedian?: number;
-  
+
   // Market Sentiment
   gmp?: number;
   gmpPercent?: number;
@@ -58,29 +59,29 @@ export interface IpoData {
   subscriptionNii?: number;
   subscriptionHni?: number;
   subscriptionRetail?: number;
-  
+
   // Promoter Info
   promoterHolding?: number;
   postIpoPromoterHolding?: number;
-  
+
   // Scores
   fundamentalsScore?: number;
   valuationScore?: number;
   governanceScore?: number;
   overallScore?: number;
-  
+
   // Risk Assessment
   riskLevel?: "conservative" | "moderate" | "aggressive";
   redFlags?: string[];
   pros?: string[];
-  
+
   // AI Analysis
   aiSummary?: string;
   aiRecommendation?: "SUBSCRIBE" | "AVOID" | "NEUTRAL";
-  
+
   // External IDs
   investorGainId?: number;
-  
+
   // Activity Dates
   basisOfAllotmentDate?: string;
   refundsInitiationDate?: string;
@@ -238,6 +239,86 @@ export abstract class BaseScraper {
     throw lastError || new Error(`Failed to fetch ${url}`);
   }
 
+  protected async fetchWithPuppeteer(url: string, waitForSelector: string = 'body', waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2' = 'networkidle2'): Promise<string> {
+    const startTime = Date.now();
+    let browser;
+    try {
+      this.sourceLogger.info(`Launching Puppeteer for ${url}`);
+      browser = await puppeteer.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--disable-gpu',
+          '--no-first-run',
+          '--no-zygote',
+          '--disable-extensions',
+          '--disable-background-networking',
+          '--disable-sync',
+          '--metrics-recording-only',
+          '--mute-audio'
+        ]
+      });
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080 });
+
+      // PERFORMANCE: Block unnecessary resources (30-40% speed boost)
+      await page.setRequestInterception(true);
+      page.on('request', (req) => {
+        const blocklist = ['image', 'stylesheet', 'font', 'media', 'websocket'];
+        if (blocklist.includes(req.resourceType())) {
+          req.abort();
+        } else {
+          req.continue();
+        }
+      });
+
+      // Stealthier headers
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': DEFAULT_HEADERS["User-Agent"]
+      });
+
+      await page.goto(url, { waitUntil, timeout: this.config.timeout });
+
+      if (waitForSelector) {
+        try {
+          await page.waitForSelector(waitForSelector, { timeout: this.config.timeout / 2 });
+        } catch (selectorErr: any) {
+          this.sourceLogger.warn(`Selector '${waitForSelector}' not found, continuing anyway`);
+        }
+      }
+
+      const content = await page.content();
+      await browser.close();
+
+      this.sourceLogger.info("Fetched page with Puppeteer", {
+        url,
+        durationMs: Date.now() - startTime
+      });
+
+      return content;
+    } catch (err: any) {
+      if (browser) await browser.close().catch(() => { });
+      throw new Error(`Puppeteer fetch failed: ${err.message}`);
+    }
+  }
+
+  protected handleError(error: any): ScraperResult<any> {
+    const message = error instanceof Error ? error.message : String(error);
+    this.sourceLogger.error(`Scraper error: ${message}`);
+    return {
+      success: false,
+      data: [],
+      error: message,
+      source: this.name,
+      timestamp: new Date(),
+      responseTimeMs: 0
+    };
+  }
+
   protected delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
@@ -245,7 +326,7 @@ export abstract class BaseScraper {
   protected wrapResult<T>(data: T[], startTime: number, error?: string, operation: ScraperOperation = 'ipos'): ScraperResult<T> {
     const responseTimeMs = Date.now() - startTime;
     const sourceName = this.name.toLowerCase() as ScraperSource;
-    
+
     // Log the result to the scraper logger (async but not awaited)
     if (!error) {
       scraperLogger.logSuccess(sourceName, operation, data.length, responseTimeMs, {
@@ -255,7 +336,7 @@ export abstract class BaseScraper {
       scraperLogger.logError(sourceName, operation, error, responseTimeMs)
         .catch(err => console.error(`[${this.name}] Failed to log error:`, err));
     }
-    
+
     return {
       success: !error,
       data,
@@ -413,7 +494,7 @@ export function parsePercentage(text: string | number | undefined | null): numbe
   if (text === undefined || text === null) return null;
   if (typeof text === "number") return text;
   if (typeof text !== "string" || text === "-" || text.toLowerCase() === "n/a") return null;
-  
+
   const match = text.match(/([\d.]+)/);
   return match ? parseFloat(match[1]) : null;
 }
@@ -422,7 +503,7 @@ export function parseDecimal(text: string | number | undefined | null): number |
   if (text === undefined || text === null) return null;
   if (typeof text === "number") return text;
   if (typeof text !== "string" || text === "-" || text.toLowerCase() === "n/a") return null;
-  
+
   const match = text.match(/([\d.]+)/);
   return match ? parseFloat(match[1]) : null;
 }
@@ -471,7 +552,7 @@ export function generateScores(data: Partial<IpoData>): Partial<IpoData> {
   if (data.patMargin && data.patMargin > 10) governanceScore += 1;
 
   const validScores = [fundamentalsScore, valuationScore, governanceScore].filter(s => !isNaN(s));
-  const overallScore = validScores.length > 0 
+  const overallScore = validScores.length > 0
     ? (fundamentalsScore * 0.4 + valuationScore * 0.35 + governanceScore * 0.25) / 1
     : undefined;
 
@@ -515,10 +596,10 @@ export function generateRiskAssessment(data: Partial<IpoData>): Partial<IpoData>
     pros.push("Positive GMP indicating market confidence");
   }
 
-  const riskLevel: "conservative" | "moderate" | "aggressive" = 
+  const riskLevel: "conservative" | "moderate" | "aggressive" =
     redFlags.length > 3 ? "aggressive" :
-    redFlags.length > 1 ? "moderate" :
-    "conservative";
+      redFlags.length > 1 ? "moderate" :
+        "conservative";
 
   return {
     redFlags: redFlags.length > 0 ? redFlags : undefined,

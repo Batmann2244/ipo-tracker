@@ -61,13 +61,13 @@ function Router() {
 
   return (
     <Switch>
-      <Route path="/" component={user ? () => <PrivateRoute component={Dashboard} /> : Landing} />
-      <Route path="/dashboard" component={() => <PrivateRoute component={Dashboard} />} />
-      <Route path="/watchlist" component={() => <PrivateRoute component={Watchlist} />} />
-      <Route path="/calendar" component={() => <PrivateRoute component={Calendar} />} />
-      <Route path="/ipos/:id" component={() => <PrivateRoute component={IpoDetail} />} />
-      <Route path="/settings" component={() => <PrivateRoute component={Settings} />} />
-      <Route path="/admin" component={() => <PrivateRoute component={Admin} />} />
+      <Route path="/" component={Landing} />
+      <Route path="/dashboard" component={() => <PrivateRoute component={Dashboard} hideFooter />} />
+      <Route path="/watchlist" component={() => <PrivateRoute component={Watchlist} hideFooter />} />
+      <Route path="/calendar" component={() => <PrivateRoute component={Calendar} hideFooter />} />
+      <Route path="/ipos/:id" component={() => <PrivateRoute component={IpoDetail} hideFooter />} />
+      <Route path="/settings" component={() => <PrivateRoute component={Settings} hideFooter />} />
+      <Route path="/admin" component={() => <PrivateRoute component={Admin} hideFooter />} />
       <Route path="/api-dashboard" component={() => <PrivateRoute component={ApiDashboard} hideFooter />} />
       <Route path="/api-keys" component={() => <PrivateRoute component={ApiKeys} hideFooter />} />
       <Route path="/billing" component={() => <PrivateRoute component={Billing} hideFooter />} />

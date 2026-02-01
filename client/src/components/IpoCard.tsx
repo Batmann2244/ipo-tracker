@@ -13,6 +13,12 @@ interface IpoCardProps {
   onClick?: () => void;
 }
 
+// Truncate excessively long text (safety measure)
+function truncateText(text: string, maxLength: number = 100): string {
+  if (!text || text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+}
+
 function ScoreDisplay({ score, size = "md" }: { score: number | null; size?: "sm" | "md" }) {
   if (score === null || score === undefined) return null;
   
@@ -113,7 +119,7 @@ export function IpoCard({ ipo, compact = false, onClick }: IpoCardProps) {
               <h3 className="font-bold text-foreground group-hover:text-primary transition-colors">
                 {ipo.symbol}
               </h3>
-              <p className="text-sm text-muted-foreground truncate max-w-[150px]">{ipo.companyName}</p>
+              <p className="text-sm text-muted-foreground truncate max-w-[150px]">{truncateText(ipo.companyName, 60)}</p>
             </div>
             <ScoreDisplay score={ipo.overallScore} size="sm" />
           </div>
@@ -149,7 +155,7 @@ export function IpoCard({ ipo, compact = false, onClick }: IpoCardProps) {
             <StatusBadge status={ipo.status} />
           </div>
           <h3 className="text-sm text-muted-foreground line-clamp-1">
-            {ipo.companyName}
+            {truncateText(ipo.companyName, 80)}
           </h3>
         </div>
         <ScoreDisplay score={ipo.overallScore} size="md" />
