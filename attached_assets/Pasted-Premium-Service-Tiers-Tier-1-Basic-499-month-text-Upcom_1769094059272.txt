@@ -1,0 +1,152 @@
+Premium Service Tiers
+Tier 1: Basic (₹499/month)
+text
+✅ Upcoming IPO list (daily refresh)
+✅ Live subscription data (30min delay)
+✅ GMP data (hourly)
+✅ DRHP documents (links)
+✅ 100 API calls/day
+✅ Email support
+❌ Real-time alerts
+❌ Webhooks
+Target: Casual retail traders, students.
+
+Tier 2: Pro (₹2,999/month)
+text
+✅ Everything in Basic +
+✅ Real-time alerts (Telegram/Email)
+✅ Live subscription (15min updates)
+✅ GMP tracking + trend analysis
+✅ Post-listing price tracking
+✅ Portfolio P&L calculation
+✅ 10,000 API calls/day
+✅ Webhooks (subscription, GMP changes)
+✅ Priority support
+✅ Historical data (past 2 years)
+Target: Active traders, small fintech apps, investment clubs.
+
+Tier 3: Enterprise (Custom, ₹20k-100k/month)
+text
+✅ Everything in Pro +
+✅ Unlimited API calls
+✅ Custom webhooks
+✅ Dedicated Slack channel
+✅ White-label API (your branding)
+✅ SLA guarantee (99.9% uptime)
+✅ Priority webhook delivery
+✅ Custom data feeds
+✅ Real-time market sentiment
+✅ Backtesting data
+Target: Brokers, investment apps (Groww, Upstox ecosystem), wealth managers.
+
+API Endpoints (Premium Service)
+Authentication
+text
+POST /v1/auth/token
+Body: {api_key, api_secret}
+Response: {token, expires_in}
+Tier 1 & 2 Endpoints
+Endpoint	Calls/Day	Response	Use Case
+GET /v1/ipos/upcoming	10	Array of next 10 IPOs	Browse upcoming
+GET /v1/ipos/:symbol/live	100	Real-time sub %, GMP, bid count	Live dashboard
+GET /v1/ipos/:symbol/history	100	Historical returns, performance	Analysis
+GET /v1/ipos/performance	50	All IPOs + listing gains, 1M/6M ret	Portfolio tracking
+GET /v1/portfolio/:user_id/pnl	100	Your holdings P&L real-time	Track investments
+POST /v1/alerts/subscribe	10	Subscribe to Telegram/Email alerts	Set thresholds
+Tier 3 (Enterprise) Additions
+Endpoint	Response	Use Case
+GET /v1/ipos/sentiment	Bullish/Bearish score, Reddit/Twitter mentions	Market mood
+GET /v1/ipos/backtest	Historical scoring accuracy	Validate models
+POST /v1/webhooks/subscribe	Subscribe to real-time events	App integration
+GET /v1/ipos/export/csv	Bulk data export	Reporting
+GET /v1/market/analysis	Peer comparison, valuation trends	Research
+Revenue Model
+text
+Recurring SaaS:
+├─ Basic: ₹499 × 1,000 users = ₹4.99L/month
+├─ Pro: ₹2,999 × 500 users = ₹15L/month
+└─ Enterprise: ₹50k avg × 20 clients = ₹10L/month
+
+Total: ~₹30L/month potential (conservative)
+Acquisition strategy:
+
+Free tier (limited: 10 API calls/day) → upgrade path
+
+Reddit threads (r/IndiaInvestments, r/Stocks)
+
+Twitter/LinkedIn (fintech builder community)
+
+GitHub (developers) → "IPO data for your apps"
+
+Partnerships with fintech platforms
+
+Technical Stack (Paid Service)
+text
+Backend: Node.js + Express
+Auth: JWT + API keys (database)
+Rate Limiting: Redis (per key, per tier)
+Database: PostgreSQL (user data, keys, usage)
+Caching: Redis (expensive API responses, webhook queue)
+Queue: BullMQ (webhook delivery, scraper jobs)
+Monitoring: Prometheus + Grafana (uptime tracking)
+CDN: CloudFlare (if scaling)
+Deploy: Docker on AWS/GCP (production reliability)
+Monetization Add-Ons
+Option 1: Freemium + Paid Tiers (Recommended)
+text
+Free (Forever):
+├─ Upcoming IPO list (daily)
+├─ 10 API calls/day
+├─ Email digests
+└─ Community forum
+
+Paid:
+├─ Basic: Real-time data
+├─ Pro: Alerts + webhooks
+└─ Enterprise: Full pipeline
+Option 2: Pay-Per-Call (Blockchain/Crypto style)
+text
+Credits: ₹0.10 per API call
+├─ Upcoming IPO list = 1 credit
+├─ Live subscription = 5 credits
+├─ Portfolio P&L = 10 credits
+└─ Bulk export = 100 credits
+
+Users buy credit packs (₹500 = 5,000 credits)
+Option 3: Enterprise Licensing (B2B focus)
+text
+Annual license: ₹5-50L
+├─ Brokers/Apps integrate API
+├─ White-label option
+├─ SLA guarantee
+└─ Dedicated support
+Business Model Summary
+Model	Revenue	Target
+Freemium	₹50-100L/month (scale)	Individual traders + teams
+Pay-per-call	₹30-50L/month	Variable usage, developers
+Enterprise	₹5-20L/month per client	Brokers, fintech platforms
+Recommended: Start with Freemium + Pro tier (easiest to sell, clear upgrade path).
+
+Go-to-Market Strategy
+Phase 1: MVP (Current Project) ✅
+Build for yourself (personal use)
+
+Show on GitHub (portfolio + social proof)
+
+Get initial traction on Reddit
+
+Phase 2: Launch Paid (3 months)
+Soft launch: Free tier + Pro tier
+
+Early users: Provide free Pro access (testimonials)
+
+Gather feedback, iterate
+
+Launch on ProductHunt
+
+Phase 3: Scale (6+ months)
+Enterprise sales (outreach to Groww, Upstox, etc.)
+
+API marketplace (Rapidapi, etc.)
+
+Partnerships with fintech platforms

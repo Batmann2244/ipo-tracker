@@ -1,0 +1,387 @@
+Complete Feature List (by Service)
+1. Data Ingestion Service
+✅ Daily cron scrape Chittorgarh /ipo/ipo_dashboard.asp
+​
+
+✅ Parse: symbol, company name, open/close dates, price band, lot size, min qty
+
+✅ Extract GMP (grey market premium) from live bidding page
+​
+
+✅ Parse DRHP PDFs → extract financials (3Y revenue, EBITDA, PAT, margins)
+
+✅ Deduplicate entries (Redis cache IPO:${symbol})
+
+✅ Error handling + retry logic (BullMQ, 3 attempts)
+
+✅ Rate limiting (10 scrapes/min, respect robots.txt)
+
+✅ Slack alert on scrape failures
+
+2. Financial Analysis Service
+✅ Extract from DRHP:
+
+Revenue (3Y), EBITDA, PAT, EPS
+
+Margins: EBITDA%, PAT%
+
+ROE, ROCE (if disclosed)
+
+Debt/EBITDA, Interest coverage
+
+Capex plans, cash flows
+
+Promoter holding, pledge status
+
+✅ Normalize for missing data (interpolate, flag)
+
+✅ Store in PostgreSQL (schema: 40+ columns)
+
+3. Scoring Engine (Rule-Based)
+Compute score: 0-10 with breakdown:
+
+Category	Metrics	Weight	Formula
+Fundamentals	Rev CAGR 3Y, PAT consistency, ROE	35%	CAGR>20?:8 CAGR>10?:5 :2
+Valuation	P/E, P/B vs sector median	30%	PE_ratio vs peers → 3-8
+Debt Health	Debt/EBITDA, interest coverage	15%	<3 EBITDA?:7 :3
+Growth Potential	Capex/revenue, TAM, use of funds	15%	Strong capex?:7 :4
+Risk Flags	High OFS %, promoter exit, litigation	-20%	Each flag: -5 to -20
+Output JSON:
+
+json
+{
+  "symbol": "XYZ",
+  "total_score": 7.2,
+  "scores": {
+    "fundamentals": 7,
+    "valuation": 5,
+    "debt": 8,
+    "growth": 7
+  },
+  "red_flags": ["OFS: 60% (promoter exit)", "P/E: 25x vs median 15x"],
+  "suitability": "Moderate Risk"
+}
+4. AI Analysis Service
+✅ Feed structured data + DRHP excerpts to OpenAI
+
+✅ Function calling for structured output:
+
+analyzeMoat() → "Strong brand + network effects" OR "commodity, high competition"
+
+assessRisks() → ["high debt maturity", "regulatory risk", "customer concentration"]
+
+evaluateManagement() → promoter track record assessment
+
+competitorComparison() → "vs XYZ (listed), this is 20% cheaper"
+
+✅ Output: Markdown narrative (500 words max)
+
+✅ Cache responses (same metrics → same analysis)
+
+Example output:
+
+text
+**Moat Analysis**: Strong IP portfolio + 80% gross margins suggest pricing power.
+
+**Key Risks**: 
+- Concentration: Top 3 customers = 45% revenue
+- Commodity risk: Steel prices 2023-2024 volatility
+
+**Valuation**: Premium to peers justified by ROCE. Manageable.
+
+**Bottom Line**: Quality business at fair price. Wait 3-6m for clarity.
+5. Portfolio Tracking Service
+✅ Manual input: CSV upload {symbol, lots_applied, allotted_qty, buy_price}
+
+✅ Auto-fetch CMP from NSE/YahooFinance daily
+
+✅ Calculate: cost, current value, P&L %, return since listing
+
+✅ Aggregate: portfolio return vs Nifty50, hit rate (% winners)
+
+✅ Alert: "ABC IPO +30%, lock ₹50k profit?"
+
+Dashboard table:
+
+text
+Symbol | Allot | Cost | CMP | +1M% | P&L | Status
+XYZ    | 10    | ₹500 | ₹680 | +15% | +36% | Hold
+ABC    | 5     | ₹100 | ₹85  | -8%  | -15% | Stop-loss
+6. Backtesting Service
+✅ Scrape 500+ historical IPOs (2020-2025) from Chittorgarh
+
+✅ Retroactively compute scores using your rules
+
+✅ Compare: score threshold vs actual 1M/6M/1Y returns
+
+✅ Output: "Score >7 = 68% hit rate, avg +18% listing day"
+
+✅ API: GET /backtest?min_score=7&time_horizon=1M → metrics
+
+Example:
+
+json
+{
+  "threshold": 7.0,
+  "sample_size": 145,
+  "hit_rate": 0.68,
+  "avg_listing_gain": 18.5,
+  "avg_6m_return": 22.0,
+  "win_loss_ratio": 1.8
+}
+7. Alert & Notification Service
+✅ Telegram bot:
+
+"New IPO: ABC (ACME Corp) opens tomorrow"
+
+"Score: 7.8/10 | Moat: Strong | Risk: Moderate"
+
+"Your score threshold: 7.5 → APPLY? Yes/No"
+
+✅ Email digest: Weekly summary (top 3 upcoming)
+
+✅ Portfolio alerts:
+
+"XYZ listing today, GMP ₹150 → expected pop +30%"
+
+"ABC P&L +25%, consider partial exit"
+
+8. API & Caching Layer
+Express endpoints:
+
+Endpoint	Method	Params	Response
+/api/ipos/upcoming	GET	-	Array of next 10 IPOs
+/api/ipos/:symbol/score	GET	-	Full scoring breakdown
+/api/ipos/:symbol/analysis	GET	-	AI narrative + risks
+/api/ipos/:symbol/compare	GET	industry	Peer benchmarks
+/api/portfolio	GET	-	Holdings + P&L
+/api/portfolio/add	POST	{symbol, qty, price}	Add holding
+/api/backtest	GET	?min_score=7&horizon=1M	Hit rate metrics
+/api/alerts/telegram/subscribe	POST	{chat_id, min_score}	Subscribe
+Redis caching:
+
+IPO data: 6h TTL
+
+Scores: 24h TTL
+
+AI analysis: 7d TTL
+
+CMP prices: 1h TTL
+
+9. Monitoring & Health Checks
+✅ Health endpoint: GET /health → scraper status, last run, DB rows
+
+✅ Logs: All scrapes, scores, AI calls logged to PostgreSQL
+
+✅ Alerts: Scraper down >2h? Slack to you
+
+✅ Metrics: "5 new IPOs found", "3 scored >7", "2 AI analyses"
+
+Feature Prioritization (MVP vs Nice-to-Have)
+Phase 1 (Week 1-2) — MVP
+DataSvc: Chittorgarh scrape → Postgres ✅
+
+ScoringSvc: 4 simple rules → score ✅
+
+Telegram basic alerts ✅
+
+Docker setup ✅
+
+Phase 2 (Week 3) — Core Differentiation
+AI Service (OpenAI function calling) ✅
+
+Portfolio tracking ✅
+
+Express API (/upcoming, /score, /analysis) ✅
+
+Phase 3 (Week 4+) — Advanced
+Backtesting engine ✅
+
+Peer comparison ✅
+
+Email digests, advanced alerts ✅
+
+Historical performance tracking (post-listing) ✅
+
+Tech Stack Summary
+text
+Backend: Node.js 20 + Express.js
+Database: PostgreSQL 16
+Queue: BullMQ (Redis)
+Scraping: Puppeteer + Cheerio + pdf-parse
+AI: OpenAI gpt-4o-mini (function calling)
+Alerts: Telegram Bot API + optional Nodemailer
+Caching: Redis (6h-7d TTLs)
+Deploy: Docker + docker-compose
+Monitoring: Winston logs + Slack
+This is your complete spec. Start with Phase 1 (3-4 days), then iterate. Each feature is interview-gold: ETL, rule engines, API design, caching, async jobs.
+
+Which phase should we dive into first?
+
+Prepared using Deep research
+so now for this these services should be in one project or these are like different projects all togehter
+Single monolithic project with modular services folder structure—best for your SDE prep and personal use.
+
+Recommended: Monolith with Service Modules
+One repo, organized by concern:
+
+text
+ipo-analyzer/
+├── docker-compose.yml          # Postgres + Redis
+├── .env.example
+├── package.json
+├── src/
+│   ├── services/               # 7 core services
+│   │   ├── data-ingestion/     # Scraper + parser
+│   │   │   ├── chittorgarh-scraper.js
+│   │   │   ├── drhp-parser.js
+│   │   │   └── db-loader.js
+│   │   ├── financial-analysis/  # Extract + normalize
+│   │   │   ├── financial-extractor.js
+│   │   │   └── validation.js
+│   │   ├── scoring-engine/      # Rule-based scoring
+│   │   │   ├── scorer.js
+│   │   │   └── rules.js
+│   │   ├── ai-analysis/         # OpenAI service
+│   │   │   ├── ai-analyzer.js
+│   │   │   └── prompts.js
+│   │   ├── portfolio-tracker/   # Holdings + P&L
+│   │   │   ├── portfolio-service.js
+│   │   │   └── cmp-fetcher.js
+│   │   ├── backtest-engine/     # Historical validation
+│   │   │   ├── backtest.js
+│   │   │   └── metrics.js
+│   │   └── alerts/              # Telegram + Email
+│   │       ├── telegram-bot.js
+│   │       └── email-service.js
+│   ├── api/                     # Express routes
+│   │   ├── routes/
+│   │   │   ├── ipos.js
+│   │   │   ├── portfolio.js
+│   │   │   ├── backtest.js
+│   │   │   └── health.js
+│   │   └── middleware/
+│   │       ├── auth.js
+│   │       ├── cache.js
+│   │       └── error-handler.js
+│   ├── db/                      # Database
+│   │   ├── migrations/
+│   │   │   ├── 001_create_ipos.sql
+│   │   │   ├── 002_create_scores.sql
+│   │   │   └── 003_create_portfolio.sql
+│   │   └── models/
+│   │       ├── ipo.js
+│   │       ├── score.js
+│   │       └── portfolio.js
+│   ├── jobs/                    # Cron jobs
+│   │   ├── daily-scrape.js
+│   │   ├── score-new-ipos.js
+│   │   └── update-portfolio.js
+│   ├── utils/                   # Shared helpers
+│   │   ├── logger.js
+│   │   ├── redis-client.js
+│   │   └── openai-client.js
+│   └── app.js                   # Express setup
+├── tests/
+│   ├── services/
+│   ├── api/
+│   └── jobs/
+├── .github/workflows/           # CI/CD (optional)
+└── README.md
+Why Monolith (Not Microservices)
+Aspect	Monolith	Microservices
+Deployment	docker-compose up (1 command)	7 services to manage separately
+Development	Single repo, easy iteration	Complex cross-service debugging
+Scaling	Good enough for personal use	Overkill for your scope
+Interview Value	"Designed modular monolith" (strong)	"Distributed systems" (overengineered for project scale)
+Ops Complexity	Docker + Postgres + Redis	+service discovery, load balancing
+Database	Shared Postgres + Redis	Per-service DBs? Data sync nightmare
+Latency	HTTP calls within process	Network hops between services
+For your case: Monolith wins. You're optimizing for SDE prep, not Netflix scale.
+
+Service Interaction Pattern (Single Process)
+javascript
+// src/app.js
+const express = require('express');
+const dataService = require('./services/data-ingestion');
+const scoringService = require('./services/scoring-engine');
+const aiService = require('./services/ai-analysis');
+const portfolioService = require('./services/portfolio-tracker');
+const alertService = require('./services/alerts');
+
+const app = express();
+
+// All services run in same Node process
+// Call them directly: no HTTP overhead
+
+app.get('/api/ipos/:symbol/score', async (req, res) => {
+  const ipoData = await dataService.getIPO(req.params.symbol);
+  const score = await scoringService.score(ipoData);
+  const analysis = await aiService.analyze(ipoData);
+  
+  res.json({ score, analysis });
+});
+Deployment Story (Interview-Ready)
+bash
+# Clone + deploy in 2 commands
+git clone https://github.com/you/ipo-analyzer
+cd ipo-analyzer && docker-compose up
+
+# Services communicate in-process
+# Logs visible in docker output
+# Postgres accessible: localhost:5432
+# Redis: localhost:6379
+# API: localhost:3000
+When to Split (Future Scale)
+Stay monolith unless:
+
+Scraper needs independent scaling (heavy I/O) → separate worker pod
+
+AI service expensive (latency) → async queue + separate consumer
+
+Portfolio tracking hit by many users → API service separate
+
+But for personal use + SDE interview? Monolith is cleaner, faster, and more impressive ("I built a complete system from ETL to API in one codebase").
+
+Code Example: Single Service Call
+javascript
+// src/services/data-ingestion/chittorgarh-scraper.js
+async function scrapeIPOs() {
+  console.log('🔍 Starting daily Chittorgarh scrape...');
+  const ipos = await fetchChittorgarhPage();
+  const enriched = await Promise.all(ipos.map(async (ipo) => {
+    return {
+      ...ipo,
+      financials: await extractDRHPFinancials(ipo.drhpUrl),
+      gmp: await fetchGMP(ipo.symbol)
+    };
+  }));
+  await db.ipos.bulkCreate(enriched);
+  return enriched;
+}
+
+// Used in jobs and API endpoints same way
+module.exports = { scrapeIPOs };
+Folder Access Pattern
+All services import from shared utils:
+
+javascript
+// Services access DB, Redis, Logger centrally
+const db = require('../db/models');
+const redis = require('../utils/redis-client');
+const logger = require('../utils/logger');
+
+// One source of truth
+logger.info('IPO scored', { symbol: 'ABC', score: 7.5 });
+await redis.setex(`IPO:ABC`, 86400, JSON.stringify(data));
+Setup (Day 1)
+bash
+npm init -y
+npm install express sequelize pg redis bull @anthropic-ai/sdk puppeteer cheerio
+mkdir -p src/{services,api,db,jobs,utils}
+docker-compose up -d
+
+# Services ready to build modularly
+Recommendation: Build as single monolith, organize by service concern. Interview story: "Built a complete IPO analysis backend—ETL pipeline, scoring engine, AI insights, portfolio tracking—all in one Node.js codebase with Postgres and Redis. Scraped 1000+ IPOs, achieved 68% hit rate."
+
+Ready to start Phase 1?

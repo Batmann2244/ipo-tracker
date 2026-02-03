@@ -1,0 +1,204 @@
+Every 5 minutes is aggressive but doable for real-time IPO tracking. Here's what you can and cannot reliably get every 5 minutes for free:
+
+What Updates Every 5 Minutes (Realistic)
+Data	Source	Real-Time	Notes
+Live Subscription %	Chittorgarh
+​	✅ Updates ~30min	Official updates every 30min-1h, not 5min
+GMP (Grey Market)	Chittorgarh GMP tracker
+​	✅ Updates hourly	Market-driven, real-time but not guaranteed 5min
+Bid Activity	NSE/BSE bid page
+✅ During bidding hours	Updates intraday but refreshes ~15-30min
+Post-listing CMP	NSE live prices
+​	✅ Every 1-2 seconds	Real stock exchanges (use NSE-API)
+​
+Reality Check: Every 5 Minutes
+NSE/BSE official data (subscription): Updates every 30 minutes to 1 hour, not 5 minutes. This is NSE/BSE policy, not a technical limitation.
+
+Why? NSE publishes: Open (9:15 AM), Mid (12:30 PM), Close (5:30 PM), and maybe 1-2 intraday updates. That's it.
+
+Here's What You CAN Do Every 5 Minutes
+Option 1: Poll Multiple Sources (Best Approach)
+text
+Every 5 minutes:
+├─ Chittorgarh subscription page (might be same data, but worth checking)
+├─ NSE bid details page (refresh, get latest)
+├─ Groww IPO page (backup)
+├─ InvestorGain live report (another source)
+└─ Calculate delta (did % change? Flag it)
+Service: Multi-source poller. If ANY source shows new data, log it with timestamp.
+
+Option 2: Focus on What Matters
+During IPO bidding hours (9:15 AM - 5:30 PM IST):
+
+Poll Chittorgarh subscription every 15-30 minutes ✅
+
+Poll NSE bid details every 15 minutes ✅
+
+Track GMP changes every 30 minutes ✅
+
+Alert when subscription crosses thresholds (e.g., >10x, >20x) ✅
+
+After bidding closes (5:30 PM):
+
+Check allotment next day (T+3)
+
+Track post-listing prices (CMP updates real-time)
+
+Real-Time Services You CAN Build (Every 5 Min)
+Service 1: Multi-Source Subscription Poller ⭐
+text
+Every 5 minutes during bidding:
+├─ Scrape Chittorgarh sub page
+├─ Scrape NSE bid details
+├─ Scrape Groww IPO page
+└─ Compare with previous snapshot
+    ├─ If subscription % changed → Log + Alert
+    └─ Store delta (old → new)
+Output: {symbol, time, old_sub_pct, new_sub_pct, delta, source}
+
+Why: Detect momentum shifts early. E.g., "QIB subscription jumped from 2.5x to 5x in 10 min → high demand."
+
+Service 2: GMP Tracker ⭐
+text
+Every 5 minutes:
+├─ Fetch GMP from Chittorgarh
+├─ Fetch GMP from InvestorGain
+├─ Compare + flag if divergence
+└─ Track trend (is GMP rising/falling?)
+Output: {symbol, gmp, trend, source, timestamp}
+
+Why: GMP often changes intraday based on grey market sentiment. Early signal.
+
+Service 3: Alert Trigger Engine ⭐
+text
+Every 5 minutes:
+├─ Check subscription against thresholds
+│   ├─ If subscription > 10x → Alert "HIGH DEMAND"
+│   ├─ If subscription > 20x → Alert "EXTREME DEMAND"
+│   └─ If GMP jumped 10% → Alert "GMP SPIKE"
+├─ Check if new IPOs opened (daily check)
+└─ Push to Telegram/Discord immediately
+Output: Real-time alerts to your phone.
+
+Service 4: Live Price Tracker (Post-Listing) ⭐⭐⭐
+text
+Every 5 minutes (after listing):
+├─ Fetch CMP from NSE-API for listed IPOs
+├─ Calculate P&L vs purchase price
+├─ Compare vs Nifty50 (over/underperforming?)
+└─ Alert if P&L hits targets (+20%, -10%, etc.)
+Output: {symbol, cmp, listing_price, p_l_pct, vs_nifty, timestamp}
+
+Why: This is where real money is made/lost. Track in real-time.
+
+Data Sources for Every 5-Minute Polling
+Source	URL	What	Frequency	Auth
+Chittorgarh Sub	https://www.chittorgarh.com/report/ipo-subscription-status
+​	Sub %, GMP, bid data	~30min updates	None
+​
+NSE Bid	
+https://www.nseindia.com/invest/check-trades-bids-verify-ipo-bids
+​	Official subscription	~15-30min updates	None
+​
+InvestorGain	
+https://www.investorgain.com/report/ipo-subscription-live/333/all/
+​	Subscription breakdown	~hourly	None
+​
+Groww	
+https://groww.in/ipo
+​	Calendar + status	Real-time	None
+​
+NSE-API	Open-source (GitHub)
+​	Post-listing prices	Real-time (~1-2sec)	None
+​
+Architecture for Every-5-Minute Polling
+text
+Cron: Every 5 minutes (0, 5, 10, 15, 20, ...)
+│
+├─ If IPO is OPEN (bidding):
+│   ├─ Poll Chittorgarh subscription
+│   ├─ Poll NSE bid details
+│   ├─ Compare with previous snapshot
+│   ├─ Detect changes (delta)
+│   └─ Alert if threshold crossed
+│
+└─ If IPO is LISTED (post-bidding):
+    ├─ Poll NSE-API for CMP
+    ├─ Calculate P&L vs purchase price
+    └─ Alert if stop-loss/target hit
+Realistic Expectations
+During IPO Bidding (9:15 AM - 5:30 PM IST):
+
+✅ Polling every 5 min makes sense (capture momentum)
+
+✅ 80% of polls = same data (no change)
+
+✅ 20% of polls = new data (subscription/GMP updated)
+
+✅ Alerts only on deltas (no spam)
+
+Outside Bidding Hours:
+
+❌ Polling every 5 min = waste (data frozen)
+
+✅ Switch to daily/hourly checks
+
+✅ Re-enable every 5 min on next IPO open
+
+After Listing:
+
+✅ Poll NSE-API every 5 min = real-time price tracking
+
+✅ Stock prices update every 1-2 seconds anyway
+
+Recommended Services (5-Min Polling)
+text
+Service 1: Subscription Poller (Chittorgarh + NSE)
+Service 2: GMP Tracker
+Service 3: Alert Trigger (Telegram push)
+Service 4: Live Price Tracker (post-listing)
+Service 5: Delta Logger (store changes in DB)
+Code Pattern (Pseudo)
+text
+function every5Minutes() {
+  const now = new Date();
+  
+  // Only poll during bidding hours (IST)
+  if (isBiddingHours(now)) {
+    const chittorgarhData = scrapeChittorgarh();
+    const nseData = scrapeNSE();
+    
+    const delta = compare(chittorgarhData, previousSnapshot);
+    
+    if (delta.subscriptionChange > 5) {  // 5% jump
+      alertTelegram(`⚠️ ${symbol} subscription jumped: ${delta}%`);
+    }
+    
+    store(delta);
+    updatePreviousSnapshot(chittorgarhData);
+  }
+  
+  // Always track post-listing prices
+  if (isListed) {
+    const cmp = fetchNSEPrice(symbol);
+    const pnl = calculatePnL(cmp, buyPrice);
+    
+    if (pnl < -10) {  // Stop loss
+      alertTelegram(`🔴 ${symbol} P&L: ${pnl}% - STOP LOSS`);
+    }
+  }
+}
+
+setInterval(every5Minutes, 5 * 60 * 1000);
+Summary
+Every 5 minutes is achievable, but:
+
+✅ Subscription data updates every 30 min - 1 hour (not 5 min)
+
+✅ GMP updates hourly
+
+✅ Post-listing prices update every 1-2 seconds (real-time)
+
+✅ Polling every 5 min captures changes faster even if source updates less frequently
+
+Best strategy: Poll every 5 min, log only deltas (changes), alert only on threshold crossings. This gives you real-time awareness without data overload

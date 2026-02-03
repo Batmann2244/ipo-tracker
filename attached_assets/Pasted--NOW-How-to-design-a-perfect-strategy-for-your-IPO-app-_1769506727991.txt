@@ -1,0 +1,148 @@
+🚀 NOW: How to design a perfect strategy for your IPO app (No code, just architecture)
+⭐ Your Use Case:
+
+Market hours = 10:00 to 16:00 → 6 hours a day
+
+You want to refresh IPO data for your users every X minutes
+
+But you must stay under 25 requests per day
+
+Meaning:
+
+⚠️ You CANNOT call the API every 20 minutes.
+
+6 hours = 360 minutes
+20 minute interval = 18 calls daily → too high
+(And if you fetch multiple pages, requests increase.)
+
+🎯 The Perfect Free-Tier Strategy
+1) Understand what data changes during the day
+
+During market hours, the only IPO values that keep changing:
+
+GMP (but you don’t have GMP in free tier)
+
+Listing price (only on listing day)
+
+Status changing from upcoming → open → closed
+
+So you do NOT need to fetch everything every time.
+
+🎯 Strategy Overview
+Your Daily Request Budget = 25
+
+So allocate like this:
+
+✔️ A) Fetch ALL open IPOs (once per day)
+
+This is the “heaviest” call because you need pagination.
+
+Example typical counts:
+
+2–5 ongoing IPOs → around 2–5 requests
+
+Very rare to exceed 8
+
+So:
+Daily cost: ~5 requests
+
+Do this once at around 10:15 AM.
+
+✔️ B) Fetch ALL upcoming IPOs (once per day)
+
+Again pagination but upcoming IPOs are also few.
+
+Cost: ~5 requests/day
+
+Run around mid-day (12 PM).
+
+✔️ C) Fetch ALL listed IPOs (once per day)
+
+Only IPOs listed in last 3 days are returned.
+
+Usually 2–3 IPOs → 3 requests max.
+
+Run around 2 PM.
+
+✔️ D) Fetch specific IPO details only when needed
+
+If user opens the IPO detail page → then make 1 request to fetch /ipos/{identifier}.
+
+Realistically:
+
+~5 requests/day
+
+✔️ Total Daily Usage Estimate
+Task	Requests/day
+Fetch OPEN IPOs	~5
+Fetch UPCOMING IPOs	~5
+Fetch LISTED IPOs	~3
+On-demand IPO details	~5
+TOTAL	18 / 25
+
+→ Safe. You still have 7 requests buffer.
+
+🧊 MOST IMPORTANT RULE
+❗ You should NEVER poll the server every 20 minutes for data.
+
+Instead:
+
+Fetch each category only once per day.
+
+Why?
+Because IPO metadata does not change minute-to-minute.
+
+🔥 The MOST Efficient Fetch Strategy (Free Tier Optimised)
+Every day — automatically:
+10:15 AM
+
+Fetch ALL open IPOs → store them locally in your DB/app cache
+
+12:00 PM
+
+Fetch ALL upcoming IPOs → update DB
+
+2:00 PM
+
+Fetch newly listed IPOs → update DB
+
+Throughout the day:
+
+When user clicks an IPO → fetch /ipos/{id}
+(1 request → acceptable and only used when needed)
+
+🧠 Additional Optimization (reduces requests further)
+✔️ Cache IPO IDs for the whole week
+
+Once you fetched IPO list (IDs), you DO NOT need to fetch them again.
+
+Instead:
+
+Store all IPO IDs locally
+
+Fetch individual IPO’s details only for the ones whose status may change today
+
+Status changes logic:
+
+If today is between startDate & endDate → track it
+
+If today is listingDate → track it
+
+This reduces requests dramatically.
+
+You may even go down to:
+12–15 daily requests only
+
+🎯 The Bottom Line
+
+If you follow this flow:
+
+You will NEVER cross the free plan limit of 25/day.
+
+And your app will still feel:
+
+Fast
+
+Updated
+
+Accurate

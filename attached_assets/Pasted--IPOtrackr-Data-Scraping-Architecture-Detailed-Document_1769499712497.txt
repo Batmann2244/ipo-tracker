@@ -1,0 +1,544 @@
+# IPOtrackr - Data Scraping Architecture & Detailed Documentation
+
+## 📋 Overview
+IPOtrackr is a Next.js application that tracks Indian IPO (Initial Public Offering) data, including GMP (Grey Market Premium) values, subscription status, and historical trends. It scrapes and aggregates data from the **InvestorGain** API endpoint.
+
+---
+
+## 🔗 Data Sources & External APIs
+
+### Primary Data Source
+**Platform**: InvestorGain (investorgain.com)
+**Base Domain**: `webnodejs.investorgain.com`
+
+The application uses three main API endpoints from InvestorGain:
+
+---
+
+## 📡 API Endpoints & Data Flow
+
+### 1. **IPO Master Data Endpoint**
+**Purpose**: Fetch all active IPO information (main IPO list)
+
+**Endpoint URL**:
+```
+https://webnodejs.investorgain.com/cloud/report/data-read/331/1/6/2025/2025-26/0/all?search=&v={timestamp}
+```
+
+**URL Parameters**:
+- `search`: Search query (empty by default)
+- `v`: Cache busting timestamp (`Date.now()`)
+
+**Location in Code**: [src/lib/api.ts](src/lib/api.ts#L5)
+
+**HTTP Headers**:
+```javascript
+{
+  'Content-Type': 'application/json'
+}
+```
+
+**Cache Strategy**: Revalidates every 300 seconds (5 minutes)
+
+**Response Format**: `APIResponse` interface
+```typescript
+{
+  reportTableData: APIIPOObject[]
+}
+```
+
+**Response Contains**: Array of IPO objects with the following fields:
+
+| Field Name | Type | Description |
+|-----------|------|-------------|
+| `~orderby1` | number | Sort order |
+| `Name` | string | IPO name (contains HTML/badge markup) |
+| `GMP` | string | Grey Market Premium value with percentage |
+| `Rating` | string | IPO rating/recommendation |
+| `Sub` | string | Current subscription status |
+| `GMP(L/H) (₹)` | string | GMP low-high range |
+| `Price (₹)` | string | IPO price per share |
+| `IPO Size (₹ in cr)` | string | Issue size in crores |
+| `Lot` | string | Lot size (minimum shares per lot) |
+| `~P/E` | string | Price-to-Earnings ratio |
+| `~id` | number | **Unique IPO ID** (used for detail queries) |
+| `Open` | string | Bidding open date |
+| `Close` | string | Bidding close date |
+| `BoA Dt` | string | Basis of Allotment date |
+| `Listing` | string | Expected listing date |
+| `Updated-On` | string | Last updated timestamp |
+| `Anchor` | string | Anchor investor status |
+| `~Srt_Open` | string | Sortable open date (YYYY-MM-DD) |
+| `~Srt_Close` | string | Sortable close date (YYYY-MM-DD) |
+| `~Srt_BoA_Dt` | string | Sortable BoA date |
+| `~Str_Listing` | string | Sortable listing date |
+| `~urlrewrite_folder_name` | string | URL slug for IPO details page |
+| `~Display_Order` | number | Display order in UI |
+| `~Highlight_Row` | string | Row highlight flag |
+| `~IPO_Category` | string | IPO category (Main/SME) |
+| `~gmp_percent_calc` | string | Calculated GMP percentage |
+| `~ipo_name` | string | Clean IPO name (without HTML) |
+
+**Example API Call** (in [src/lib/api.ts](src/lib/api.ts#L9-L25)):
+```typescript
+export async function fetchIPOData(): Promise<ProcessedIPOData[]> {
+  const response = await fetch(
+    `${API_BASE_URL}?search=&v=${Date.now()}`,
+    {
+      headers: { 'Content-Type': 'application/json' },
+      next: { revalidate: 300 } // Revalidate every 5 minutes
+    }
+  );
+  
+  const data: APIResponse = await response.json();
+  return data.reportTableData.map(processIPOData);
+}
+```
+
+---
+
+### 2. **GMP History/Trend Data Endpoint**
+**Purpose**: Fetch historical GMP data and trends for a specific IPO
+
+**Endpoint URL**:
+```
+https://webnodejs.investorgain.com/cloud/ipo/ipo-gmp-read/{ipoId}/true
+```
+
+**Path Parameters**:
+- `{ipoId}`: The unique IPO ID (from IPO master data endpoint)
+- `/true`: Indicates fetch full history
+
+**Location in Code**: [src/lib/api.ts](src/lib/api.ts#L39-L58)
+
+**HTTP Headers**:
+```javascript
+{
+  'Content-Type': 'application/json'
+}
+```
+
+**Response Format**: `IPOGmpResponse` interface
+```typescript
+{
+  msg: number,                    // 1 = success, other = error
+  ipoGmpData: Array<{
+    Seq: number,
+    id: number,
+    ipo_id: number,
+    gmp_date: string,             // Date of GMP reading
+    gmp: string,                  // GMP value in rupees
+    gmp_comments: string,         // Comments about GMP
+    gmp_compare_desc: string,     // Comparison description
+    subject_to_sauda: string,     // SAUDA indicator
+    gmp_city: string,             // City of GMP reading
+    gmp_variation: string,        // GMP variation indicator
+    max_ipo_price: string,        // Maximum IPO price
+    estimated_listing_price: string, // Est. listing price
+    gmp_percent_calc: string,     // Calculated GMP percentage
+    gmp_desc_other: string,       // Other description
+    up_down_status: string,       // Movement indicator
+    gmp_active_record_flag: number, // Active flag
+    sub2: string,
+    est_profit: string,           // Estimated profit per lot
+    create_date: string,
+    create_date_gmp: string,
+    last_updated_gmp: string,
+    last_updated: string          // Last update timestamp
+  }>,
+  ipoGmpTable: string            // HTML table with GMP history
+}
+```
+
+**Data Processing**: The response includes an HTML table in `ipoGmpTable` which is parsed using DOM parser to extract:
+- GMP Date
+- GMP Price (₹)
+- GMP Value
+- Estimated Listing Price
+- Estimated Profit Per Lot
+- Last Updated timestamp
+- Movement indicator (up/down/none with arrow icons)
+
+**Example API Call** (in [src/lib/api.ts](src/lib/api.ts#L39-L55)):
+```typescript
+export async function fetchIPOGmpData(ipoId: number): Promise<GmpHistoryItem[]> {
+  const response = await fetch(
+    `${GMP_API_BASE_URL}/${ipoId}/true`,
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+  
+  const data: IPOGmpResponse = await response.json();
+  if (data.msg !== 1) throw new Error('Invalid GMP data response');
+  
+  return processGmpHistoryData(data);
+}
+```
+
+---
+
+### 3. **IPO Subscription Data Endpoint**
+**Purpose**: Fetch live bidding/subscription data for specific investor categories
+
+**Endpoint URL**:
+```
+https://webnodejs.investorgain.com/cloud/ipo/ipo-subscription-read/{ipoId}
+```
+
+**Path Parameters**:
+- `{ipoId}`: The unique IPO ID (from IPO master data endpoint)
+
+**Location in Code**: [src/lib/api.ts](src/lib/api.ts#L89-L108)
+
+**HTTP Headers**:
+```javascript
+{
+  'Content-Type': 'application/json'
+}
+```
+
+**Response Format**: `IPOSubscriptionResponse` interface
+```typescript
+{
+  msg: number,                    // 1 = success
+  data: {
+    ipoBiddingData: Array<{
+      bid_date: string,           // Date of bidding data
+      qib: string,                // QIB (Qualified Institutional Buyers) subscription
+      nii: string,                // NII (Non-Institutional Investors) subscription
+      rii: string,                // RII (Retail Individual Investors) subscription
+      total: string               // Total subscription
+    }>
+  }
+}
+```
+
+**Data Breakdown**:
+- **QIB**: Qualified Institutional Buyers (banks, insurance, mutual funds, etc.)
+- **NII**: Non-Institutional Investors (individuals with high investment capacity)
+- **RII**: Retail Individual Investors (common public with limits)
+- **Total**: Combined subscription across all categories
+
+**Subscription Values**: Represented as multiples of issue size (e.g., 1.5x means 1.5 times oversubscribed)
+
+**Example API Call** (in [src/lib/api.ts](src/lib/api.ts#L89-L105)):
+```typescript
+export async function fetchIPOSubscriptionData(ipoId: number): Promise<ProcessedSubscriptionData | null> {
+  const response = await fetch(
+    `${SUBSCRIPTION_API_BASE_URL}/${ipoId}`,
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+  
+  const data: IPOSubscriptionResponse = await response.json();
+  return processSubscriptionData(data);
+}
+```
+
+---
+
+### 4. **Activity Dates Scraping Endpoint** (Custom Backend Route)
+**Purpose**: Extract important dates from InvestorGain IPO detail pages via HTML scraping
+
+**Endpoint URL** (Internal API Route):
+```
+/api/activity-dates?url={encodedDetailsUrl}
+```
+
+**Location in Code**: [src/app/api/activity-dates/route.ts](src/app/api/activity-dates/route.ts)
+
+**Query Parameters**:
+- `url`: Encoded URL to the IPO's detail page on InvestorGain
+
+**Data Extraction Method**: HTML scraping using regex patterns
+
+**Extracts the following dates**:
+1. **Bidding Start Date** - When IPO bidding opens
+   - Searches for: `issue_open_dt_json`, `issue_open_date`, `issue_open_dt`
+
+2. **Bidding End Date** - When IPO bidding closes
+   - Searches for: `issue_end_dt_json`, `issue_close_date`, `issue_end_dt`
+
+3. **Basis of Allotment (BoA) Date** - When shares are allotted
+   - Searches for: `timetable_boa_dt`, `basic_of_allotment_dt`
+
+4. **Refunds Initiation Date** - When money is refunded to unsuccessful bidders
+   - Searches for: `timetable_refunds_dt`, `initiation_of_refund_dt`
+
+5. **Credit to Demat Date** - When shares are credited to demat accounts
+   - Searches for: `timetable_share_credit_dt`, `demat_acct_credit_dt`
+
+6. **Listing Date** - When shares start trading on stock exchange
+   - Searches for: `timetable_listing_dt`, `ipo_listing_date`, `listing_dt`
+
+**Response Format**:
+```typescript
+{
+  biddingStartDate?: string,      // YYYY-MM-DD format
+  biddingEndDate?: string,        // YYYY-MM-DD format
+  basisOfAllotmentDate?: string,  // YYYY-MM-DD format
+  refundsInitiationDate?: string, // YYYY-MM-DD format
+  creditToDematDate?: string,     // YYYY-MM-DD format
+  listingDate?: string            // YYYY-MM-DD format
+}
+```
+
+**Scraping Logic** (in [src/app/api/activity-dates/route.ts](src/app/api/activity-dates/route.ts#L19-L47)):
+1. Fetches the detail page with browser-like headers
+2. Looks for JSON-like date strings in the HTML
+3. Uses two regex patterns:
+   - Pattern 1: Standard JSON format `"key": "value"`
+   - Pattern 2: Escaped JSON format `\"key\": \"value\"`
+4. Normalizes dates by:
+   - Stripping time components (keeping YYYY-MM-DD)
+   - Converting human-readable formats (e.g., "5th Jan 2025") to ISO (2025-01-05)
+
+**Example API Call** (in [src/lib/api.ts](src/lib/api.ts#L110-L119)):
+```typescript
+export async function fetchIPOActivityDates(detailsUrl: string): Promise<IPOActivityDates | null> {
+  const res = await fetch(
+    `/api/activity-dates?url=${encodeURIComponent(detailsUrl)}`,
+    { headers: { 'Accept': 'application/json' }, cache: 'no-store' }
+  );
+  
+  const data = await res.json();
+  return data as IPOActivityDates;
+}
+```
+
+---
+
+## 🔄 Data Processing Pipeline
+
+### Step 1: Raw Data Fetch
+```
+API → Raw JSON Response
+```
+
+### Step 2: Data Transformation
+**Function**: `processIPOData()` [in src/lib/utils.ts](src/lib/utils.ts#L3-L81)
+
+**Transformations**:
+1. **IPO Name Extraction**
+   - Extracts name from HTML markup or uses plain name field
+   - Removes special characters and formatting
+
+2. **Status Determination** (based on dates and badge class)
+   ```
+   - 'open': Currently accepting bids
+   - 'upcoming': Bidding hasn't started
+   - 'pending': Allotment in progress
+   - 'listed': Listed on exchange
+   ```
+
+3. **GMP Value Processing**
+   - Extracts numeric GMP from HTML
+   - Calculates percentage if not provided
+   - Formula: `(GMP / Price) × 100`
+
+4. **Expected Profit Calculation**
+   - Formula: `Lot Size × (Estimated Listing Price - Price)`
+   - Used for investment analysis
+
+5. **Price & Lot Size Parsing**
+   - Removes currency symbols
+   - Converts to numeric values
+
+6. **Date Normalization**
+   - Converts various date formats to YYYY-MM-DD
+   - Handles human-readable formats (e.g., "5th Jan 2025")
+
+### Step 3: GMP History Processing
+**Function**: `processGmpHistoryData()` [in src/lib/utils.ts](src/lib/utils.ts#L100-L162)
+
+**Processing Steps**:
+1. Parses HTML table from API response
+2. Extracts cells by data-title attribute
+3. Identifies movement direction (up/down/none) from icons
+4. Extracts numeric values from formatted strings
+5. Reverses array to show newest data first
+
+### Step 4: Subscription Data Processing
+**Function**: `processSubscriptionData()` [in src/lib/utils.ts](src/lib/utils.ts#L282-L297)
+
+**Processing Steps**:
+1. Gets the latest bidding data entry
+2. Extracts QIB, NII, RII, and total subscription
+3. Includes the bid date as last updated timestamp
+
+---
+
+## 📊 Complete Data Flow Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      IPO Tracker Application                        │
+└─────────────────────────────────────────────────────────────────────┘
+                                 │
+                    ┌────────────┼────────────┐
+                    │            │            │
+                    ▼            ▼            ▼
+          ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+          │  IPO Master  │ │  GMP Data    │ │ Subscription │
+          │  Data API    │ │  API         │ │ Data API     │
+          └──────────────┘ └──────────────┘ └──────────────┘
+                    │            │            │
+                    └────────────┼────────────┘
+                                 │
+                 ┌───────────────▼────────────────┐
+                 │  InvestorGain Web Server      │
+                 │  webnodejs.investorgain.com   │
+                 └───────────────┬────────────────┘
+                                 │
+                    ┌────────────┼────────────┐
+                    │            │            │
+                    ▼            ▼            ▼
+          ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+          │ All Active   │ │  Historical  │ │ Live Bidding │
+          │ IPO List     │ │  GMP Values  │ │  Subscriptions
+          └──────────────┘ └──────────────┘ └──────────────┘
+                    │            │            │
+                    └────────────┼────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │  Data Processing Layer  │
+                    │ (processIPOData, etc.)  │
+                    └────────────┬────────────┘
+                                 │
+          ┌──────────────────────┼──────────────────────┐
+          │                      │                      │
+          ▼                      ▼                      ▼
+    ┌─────────────┐         ┌──────────┐        ┌──────────────┐
+    │ Processed   │         │ Processed│        │ Processed    │
+    │ IPO Data    │         │ GMP      │        │ Subscription │
+    │             │         │ History  │        │ Data         │
+    └─────────────┘         └──────────┘        └──────────────┘
+          │                      │                      │
+          └──────────────────────┼──────────────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │  Component Display      │
+                    │  (ipoSection, Modal)    │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │    Browser Rendering    │
+                    │   (User Sees Data)      │
+                    └────────────────────────┘
+```
+
+---
+
+## 🗂️ File Structure & Responsibilities
+
+| File | Purpose |
+|------|---------|
+| [src/lib/api.ts](src/lib/api.ts) | **Main data fetching** - Contains all API calls to InvestorGain |
+| [src/lib/utils.ts](src/lib/utils.ts) | **Data processing** - Transforms raw API data into displayable format |
+| [src/types/ipo.ts](src/types/ipo.ts) | **Type definitions** - TypeScript interfaces for API responses and processed data |
+| [src/app/api/activity-dates/route.ts](src/app/api/activity-dates/route.ts) | **HTML scraping** - Extracts important dates from IPO detail pages |
+| [src/app/page.tsx](src/app/page.tsx) | **Main page** - Orchestrates data fetching and renders components |
+| [src/components/ipoSection.tsx](src/components/ipoSection.tsx) | **Server component** - Fetches IPO data |
+| [src/components/ipoSectionClient.tsx](src/components/ipoSectionClient.tsx) | **Client component** - Displays IPO list with filters |
+| [src/components/ipoDetailModal.tsx](src/components/ipoDetailModal.tsx) | **Detail modal** - Shows GMP charts and detailed info for selected IPO |
+| [src/components/ipoTable.tsx](src/components/ipoTable.tsx) | **Table display** - Renders IPO data in table format |
+| [src/components/ipoCard.tsx](src/components/ipoCard.tsx) | **Card display** - Renders IPO data in card format |
+
+---
+
+## 🔐 Data Collection Summary
+
+### Master IPO Data
+- **What**: Basic info about all active IPOs
+- **Where**: InvestorGain API (`data-read` endpoint)
+- **When**: Every 5 minutes (cache revalidation)
+- **How Much**: ~50-100 IPOs typically
+- **Fields**: 25+ fields per IPO (name, price, GMP, dates, etc.)
+
+### GMP Historical Data
+- **What**: Day-by-day GMP tracking with trends
+- **Where**: InvestorGain API (`ipo-gmp-read` endpoint)
+- **When**: On-demand when user opens IPO detail
+- **How Much**: 5-30 entries per IPO (varies by IPO age)
+- **Fields**: Date, GMP, listing price, profit, movement indicator
+
+### Subscription Data
+- **What**: Live bidding status by investor category
+- **Where**: InvestorGain API (`ipo-subscription-read` endpoint)
+- **When**: On-demand when user opens IPO detail
+- **How Much**: Latest entry only (historical available)
+- **Fields**: QIB, NII, RII, Total subscription, date
+
+### Activity Dates
+- **What**: Important IPO milestone dates
+- **Where**: InvestorGain detail pages (HTML scraping)
+- **When**: On-demand when modal opens
+- **How Much**: Up to 6 dates per IPO
+- **Fields**: Bidding start/end, allotment, refund, listing dates
+
+---
+
+## 🎯 Key Metrics & Calculations
+
+### GMP (Grey Market Premium)
+- Premium amount traders expect IPO to list at
+- Calculated: `Estimated Listing Price - Issue Price`
+- Percentage: `(GMP / Issue Price) × 100`
+
+### Expected Profit
+- Profit if IPO lists at estimated price
+- Formula: `Lot Size × (Estimated Listing Price - Issue Price)`
+- Used for investment comparison
+
+### Subscription Status
+- QIB/NII/RII: Times oversubscribed in each category
+- Example: 2.5x means 2.5 times the available shares were bid for
+- Shows investor demand
+
+### Activity Progress
+- Calculated percentage through IPO timeline [in src/lib/utils.ts](src/lib/utils.ts#L308-L341)
+- Based on milestone dates (bidding, allotment, listing)
+- Useful for tracking IPO progress
+
+---
+
+## 🔄 Update Frequency & Caching
+
+| Data Type | Refresh Rate | Caching Strategy |
+|-----------|-------------|-----------------|
+| IPO Master Data | Every 5 min | Next.js revalidation |
+| GMP Data | On-demand | No cache (real-time) |
+| Subscription Data | On-demand | No cache (real-time) |
+| Activity Dates | On-demand | 5 min cache |
+
+---
+
+## ⚠️ Data Limitations & Notes
+
+1. **Depends on InvestorGain**: If their API goes down, data unavailable
+2. **GMP Accuracy**: Based on market sentiment, not guaranteed
+3. **Subscription Data**: Updated during bidding period only
+4. **HTML Scraping**: Depends on page structure consistency
+5. **Time Zone**: Data is in IST (Indian Standard Time)
+6. **No Authentication**: APIs are publicly accessible
+
+---
+
+## 🚀 Technology Stack
+
+- **Frontend**: Next.js 15, React 19, TypeScript
+- **Styling**: Tailwind CSS, Framer Motion animations
+- **Charts**: Chart.js with react-chartjs-2
+- **Data Fetching**: Next.js fetch with ISR (Incremental Static Regeneration)
+- **HTTP Client**: Browser native fetch API
+
+---
+
+## 📝 Summary
+
+IPOtrackr is a **data aggregator** that:
+1. **Fetches** IPO master data from InvestorGain API every 5 minutes
+2. **Scrapes** GMP history and subscription data on-demand
+3. **Extracts** important dates via HTML scraping
+4. **Processes** all data into user-friendly format
+5. **Displays** through beautiful React components with charts
+
+The entire application is a **read-only data scraper** that pulls from a single source (InvestorGain) and presents it in an improved UI without storing data in its own database.

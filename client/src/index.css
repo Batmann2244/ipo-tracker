@@ -1,0 +1,203 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 220 10% 10%;
+  
+  --primary: 18 90% 52%;
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 220 10% 10%;
+  
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 8% 46%;
+  
+  --accent: 18 90% 52%;
+  --accent-foreground: 0 0% 100%;
+  
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 18 90% 52%;
+  
+  --card: 0 0% 100%;
+  --card-foreground: 220 10% 10%;
+  --card-border: 220 13% 91%;
+  
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 10% 10%;
+  --popover-border: 220 13% 91%;
+
+  --radius: 0.5rem;
+  
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  
+  --orange: 18 90% 52%;
+  --orange-light: 18 90% 96%;
+  --green: 142 71% 45%;
+  --red: 0 84% 60%;
+}
+
+.dark {
+  --background: 220 13% 8%;
+  --foreground: 0 0% 95%;
+
+  --primary: 18 90% 55%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 220 13% 15%;
+  --secondary-foreground: 0 0% 95%;
+
+  --muted: 220 13% 15%;
+  --muted-foreground: 220 5% 55%;
+
+  --accent: 18 90% 55%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 63% 45%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 220 13% 18%;
+  --input: 220 13% 18%;
+  --ring: 18 90% 55%;
+
+  --card: 220 13% 10%;
+  --card-foreground: 0 0% 95%;
+  --card-border: 220 13% 18%;
+  
+  --popover: 220 13% 10%;
+  --popover-foreground: 0 0% 95%;
+  --popover-border: 220 13% 18%;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    letter-spacing: -0.01em;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans);
+    @apply font-bold tracking-tight text-foreground;
+  }
+  
+  ::selection {
+    @apply bg-primary/20 text-foreground;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-muted;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-border rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/30;
+}
+
+.ticker-scroll {
+  animation: ticker 30s linear infinite;
+}
+
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.clean-card {
+  @apply bg-card rounded-lg border border-border shadow-sm transition-all duration-200;
+}
+
+.clean-card:hover {
+  @apply shadow-md border-border;
+}
+
+.stat-card {
+  @apply bg-card rounded-lg border border-border p-4;
+}
+
+.tab-active {
+  @apply bg-foreground text-background;
+}
+
+.tab-inactive {
+  @apply bg-transparent text-muted-foreground border border-border hover:bg-muted;
+}
+
+.badge-green {
+  @apply bg-green-50 text-green-700 border border-green-200;
+}
+
+.badge-red {
+  @apply bg-red-50 text-red-700 border border-red-200;
+}
+
+.badge-orange {
+  @apply bg-orange-50 text-orange-700 border border-orange-200;
+}
+
+.badge-blue {
+  @apply bg-blue-50 text-blue-700 border border-blue-200;
+}
+
+.gmp-positive {
+  @apply text-green-600;
+}
+
+.gmp-negative {
+  @apply text-red-600;
+}
+
+.score-excellent {
+  @apply text-green-600;
+}
+
+.score-good {
+  @apply text-blue-600;
+}
+
+.score-fair {
+  @apply text-orange-600;
+}
+
+.score-poor {
+  @apply text-red-600;
+}
+
+.btn-primary {
+  @apply bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg font-semibold transition-colors;
+}
+
+.btn-outline {
+  @apply bg-transparent border border-border text-foreground hover:bg-muted rounded-lg font-semibold transition-colors;
+}
+
+.link-orange {
+  @apply text-primary hover:text-primary/80 transition-colors;
+}
+
+.input-clean {
+  @apply bg-background border border-border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all;
+}
+
+.premium-card {
+  @apply bg-card rounded-lg border border-border shadow-sm;
+}
+
+.glass-card {
+  @apply bg-card/80 backdrop-blur-sm border border-border shadow-sm;
+}
