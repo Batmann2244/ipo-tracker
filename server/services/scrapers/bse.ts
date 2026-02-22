@@ -74,46 +74,41 @@ export class BseScraper extends BaseScraper {
                         });
 
                         // FIX: Attempt to parse JSON for API URLs even if content-type is wrong
-                        let isJson = contentType.includes('application/json');
-                        if (!isJson && (url.includes('GetPipoData') || url.includes('/api/') || url.includes('GetData'))) {
-                            isJson = true;
-                        }
+                        // Some BSE API endpoints return JSON even with incorrect content-type headers (e.g. text/html).
+                        // We attempt to parse JSON for all matched URLs regardless of content-type.
+                        try {
+                            const data = await response.json();
+                            this.sourceLogger.info('JSON data received', {
+                                dataType: typeof data,
+                                isArray: Array.isArray(data),
+                                keys: Object.keys(data || {})
+                            });
 
-                        if (isJson || true) { // Force try parse for all matched URLs
-                            try {
-                                const data = await response.json();
-                                this.sourceLogger.info('JSON data received', {
-                                    dataType: typeof data,
-                                    isArray: Array.isArray(data),
-                                    keys: Object.keys(data || {})
-                                });
-
-                                // Handle different response structures
-                                if (Array.isArray(data)) {
-                                    interceptedData.push(...data);
-                                } else if (data.Table) {
-                                    // ASP.NET DataTable format
-                                    interceptedData.push(...(Array.isArray(data.Table) ? data.Table : [data.Table]));
-                                } else if (data.d) {
-                                    // ASP.NET WebMethod format
-                                    const parsed = typeof data.d === 'string' ? JSON.parse(data.d) : data.d;
-                                    if (Array.isArray(parsed)) {
-                                        interceptedData.push(...parsed);
-                                    } else if (parsed.Table) {
-                                        interceptedData.push(...(Array.isArray(parsed.Table) ? parsed.Table : [parsed.Table]));
-                                    }
-                                } else if (data.data || data.result || data.ipos) {
-                                    const arr = data.data || data.result || data.ipos;
-                                    if (Array.isArray(arr)) {
-                                        interceptedData.push(...arr);
-                                    }
-                                } else {
-                                    // Log unexpected structure
-                                    this.sourceLogger.warn('Unexpected JSON structure', { data });
+                            // Handle different response structures
+                            if (Array.isArray(data)) {
+                                interceptedData.push(...data);
+                            } else if (data.Table) {
+                                // ASP.NET DataTable format
+                                interceptedData.push(...(Array.isArray(data.Table) ? data.Table : [data.Table]));
+                            } else if (data.d) {
+                                // ASP.NET WebMethod format
+                                const parsed = typeof data.d === 'string' ? JSON.parse(data.d) : data.d;
+                                if (Array.isArray(parsed)) {
+                                    interceptedData.push(...parsed);
+                                } else if (parsed.Table) {
+                                    interceptedData.push(...(Array.isArray(parsed.Table) ? parsed.Table : [parsed.Table]));
                                 }
-                            } catch (parseError) {
-                                // Ignore parse errors for non-JSON
+                            } else if (data.data || data.result || data.ipos) {
+                                const arr = data.data || data.result || data.ipos;
+                                if (Array.isArray(arr)) {
+                                    interceptedData.push(...arr);
+                                }
+                            } else {
+                                // Log unexpected structure
+                                this.sourceLogger.warn('Unexpected JSON structure', { data });
                             }
+                        } catch (parseError) {
+                            // Ignore parse errors for non-JSON
                         }
                     } catch (e: any) {
                         this.sourceLogger.debug('Response parse error', { error: e.message });
