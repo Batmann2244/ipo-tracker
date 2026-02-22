@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -119,7 +119,9 @@ export const gmpHistory = sqliteTable("gmp_history", {
   gmp: integer("gmp").notNull(),
   gmpPercentage: real("gmp_percentage"),
   recordedAt: integer("recorded_at", { mode: 'timestamp' }).$defaultFn(() => new Date()),
-});
+}, (table) => ({
+  ipoIdRecordedAtIdx: index("gmp_history_ipo_recorded_at_idx").on(table.ipoId, table.recordedAt),
+}));
 
 // Peer companies for comparison
 export const peerCompanies = sqliteTable("peer_companies", {
