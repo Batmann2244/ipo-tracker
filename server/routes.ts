@@ -35,7 +35,8 @@ import {
   createOrUpdateSubscription,
   getUsageStats,
   getTodayUsageCount,
-  getTierLimits
+  getTierLimits,
+  getUserApiKeysWithUsage
 } from "./services/api-key-service";
 import { scraperLogger } from "./services/scraper-logger";
 import { investorGainScraper } from "./services/scrapers/investorgain";
@@ -122,25 +123,7 @@ export async function registerRoutes(
   app.get('/api/keys', requireAuth, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const keys = await getUserApiKeys(userId);
-
-      // Add usage info for each key
-      const keysWithUsage = await Promise.all(keys.map(async (key) => {
-        const todayUsage = await getTodayUsageCount(key.id);
-        const limits = getTierLimits(key.tier);
-        return {
-          id: key.id,
-          name: key.name,
-          keyPrefix: key.keyPrefix,
-          tier: key.tier,
-          isActive: key.isActive,
-          lastUsedAt: key.lastUsedAt,
-          createdAt: key.createdAt,
-          todayUsage,
-          dailyLimit: limits.apiCallsPerDay,
-        };
-      }));
-
+      const keysWithUsage = await getUserApiKeysWithUsage(userId);
       res.json(keysWithUsage);
     } catch (error) {
       console.error('Error fetching API keys:', error);
