@@ -68,6 +68,10 @@ function formatIpoEmailHtml(ipo: Ipo, alertType: string): string {
   const scoreColor = getScoreColor(ipo.overallScore);
   const riskColor = getRiskColor(ipo.riskLevel);
   
+  const redFlags: string[] = typeof ipo.redFlags === 'string'
+    ? JSON.parse(ipo.redFlags)
+    : (Array.isArray(ipo.redFlags) ? ipo.redFlags : []);
+
   let alertHeader = "";
   switch (alertType) {
     case "new_ipo":
@@ -130,9 +134,9 @@ function formatIpoEmailHtml(ipo: Ipo, alertType: string): string {
       
       ${ipo.gmp !== null ? `<div class="metric"><strong>Grey Market Premium:</strong> ₹${ipo.gmp}</div>` : ""}
       
-      ${ipo.redFlags && ipo.redFlags.length > 0 ? `
+      ${redFlags.length > 0 ? `
         <h3>⚠️ Red Flags</h3>
-        ${ipo.redFlags.map(flag => `<div class="red-flag">${flag}</div>`).join("")}
+        ${redFlags.map(flag => `<div class="red-flag">${flag}</div>`).join("")}
       ` : ""}
       
       ${ipo.aiSummary ? `
