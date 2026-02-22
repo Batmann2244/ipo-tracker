@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { db } from '../db';
 import { ipos, gmpHistory, subscriptionUpdates, peerCompanies } from '@shared/schema';
-import { eq, desc, gte, and } from 'drizzle-orm';
+import { eq, desc, gte, and, sql, inArray } from 'drizzle-orm';
 import { apiKeyAuth, rateLimiter, tierRequired, logRequest, AuthenticatedApiRequest } from '../middleware/api-auth';
 
 const router = Router();
@@ -337,13 +337,42 @@ router.get('/gmp/live', async (req: AuthenticatedApiRequest, res: Response) => {
     })
     .from(ipos)
     .where(eq(ipos.status, 'open'));
+
+    if (allIpos.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        count: 0,
+      });
+    }
+
+    const ipoIds = allIpos.map(i => i.id);
+
+    // Optimized: Fetch latest GMP for all open IPOs in one go
+    const latestDatesSq = db.select({
+      ipoId: gmpHistory.ipoId,
+      maxDate: sql<Date>`MAX(${gmpHistory.recordedAt})`.as('max_date'),
+    })
+    .from(gmpHistory)
+    .where(inArray(gmpHistory.ipoId, ipoIds))
+    .groupBy(gmpHistory.ipoId)
+    .as('latest_dates');
+
+    const latestGmps = await db.select({
+      ipoId: gmpHistory.ipoId,
+      gmp: gmpHistory.gmp,
+      gmpPercentage: gmpHistory.gmpPercentage,
+      recordedAt: gmpHistory.recordedAt,
+    })
+    .from(gmpHistory)
+    .innerJoin(latestDatesSq,
+      sql`${gmpHistory.ipoId} = ${latestDatesSq.ipoId} AND ${gmpHistory.recordedAt} = ${latestDatesSq.maxDate}`
+    );
+
+    const gmpMap = new Map(latestGmps.map(g => [g.ipoId, g]));
     
-    const gmpData = await Promise.all(allIpos.map(async (ipo) => {
-      const [latestGmp] = await db.select()
-        .from(gmpHistory)
-        .where(eq(gmpHistory.ipoId, ipo.id))
-        .orderBy(desc(gmpHistory.recordedAt))
-        .limit(1);
+    const gmpData = allIpos.map((ipo) => {
+      const latestGmp = gmpMap.get(ipo.id);
       
       return {
         symbol: ipo.symbol,
@@ -353,7 +382,7 @@ router.get('/gmp/live', async (req: AuthenticatedApiRequest, res: Response) => {
         priceRange: ipo.priceRange,
         updatedAt: latestGmp?.recordedAt,
       };
-    }));
+    });
     
     res.json({
       success: true,
