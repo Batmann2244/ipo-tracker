@@ -74,12 +74,20 @@ export class BseScraper extends BaseScraper {
                         });
 
                         // FIX: Attempt to parse JSON for API URLs even if content-type is wrong
-                        let isJson = contentType.includes('application/json');
-                        if (!isJson && (url.includes('GetPipoData') || url.includes('/api/') || url.includes('GetData'))) {
-                            isJson = true;
-                        }
+                        // We check for 'xhr' or 'fetch' resource types to avoid trying to parse the main HTML document as JSON,
+                        // while still forcing JSON parsing for API endpoints that might return incorrect content-type headers.
+                        const resourceType = response.request().resourceType();
+                        const isJsonContentType = contentType.includes('application/json');
+                        const isApiUrl = url.includes('GetPipoData') ||
+                                         url.includes('IPOIssues') ||
+                                         url.includes('PublicIssueData') ||
+                                         url.includes('/api/') ||
+                                         url.includes('GetData');
 
-                        if (isJson || true) { // Force try parse for all matched URLs
+                        const shouldParseAsJson = isJsonContentType ||
+                                                  (isApiUrl && (resourceType === 'xhr' || resourceType === 'fetch'));
+
+                        if (shouldParseAsJson) {
                             try {
                                 const data = await response.json();
                                 this.sourceLogger.info('JSON data received', {
