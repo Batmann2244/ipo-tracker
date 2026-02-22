@@ -9,7 +9,6 @@ import { chittorgarhScraper } from "./chittorgarh";
 import { growwScraper } from "./groww";
 import { investorGainScraper } from "./investorgain";
 import { nseScraper } from "./nse";
-import { nseToolsScraper } from "./nsetools";
 import { ipoAlertsScraper } from "./ipoalerts";
 import { bseScraper } from "./bse";
 import { ipoWatchScraper } from "./ipowatch";
@@ -88,14 +87,13 @@ export class ScraperAggregator {
     return true;
   }
 
-  async getIpos(sources: string[] = ["investorgain", "nsetools", "groww", "chittorgarh", "ipoalerts", "bse", "ipowatch", "zerodha"]): Promise<AggregatorResult<AggregatedIpoData>> {
+  async getIpos(sources: string[] = ["investorgain", "groww", "chittorgarh", "ipoalerts", "bse", "ipowatch", "zerodha", "nse"]): Promise<AggregatorResult<AggregatedIpoData>> {
     this.log("Fetching IPOs from multiple sources...");
     const results: ScraperResult<IpoData>[] = [];
 
     const tasks: Promise<ScraperResult<IpoData>>[] = [];
 
     if (sources.includes("investorgain")) tasks.push(investorGainScraper.getIpos());
-    if (sources.includes("nsetools")) tasks.push(nseToolsScraper.fetchIpos());
     if (sources.includes("groww")) tasks.push(growwScraper.getIpos());
     if (sources.includes("chittorgarh")) tasks.push(chittorgarhScraper.getIpos());
     if (sources.includes("nse")) tasks.push(nseScraper.getIpos());
@@ -199,13 +197,12 @@ export class ScraperAggregator {
     };
   }
 
-  async getSubscriptions(sources: string[] = ["nsetools", "chittorgarh", "groww", "investorgain"]): Promise<AggregatorResult<AggregatedSubscriptionData>> {
+  async getSubscriptions(sources: string[] = ["chittorgarh", "groww", "investorgain", "nse"]): Promise<AggregatorResult<AggregatedSubscriptionData>> {
     this.log("Fetching subscriptions from multiple sources...");
     const results: ScraperResult<SubscriptionData>[] = [];
 
     const tasks: Promise<ScraperResult<SubscriptionData>>[] = [];
 
-    if (sources.includes("nsetools")) tasks.push(nseToolsScraper.fetchSubscriptions());
     if (sources.includes("chittorgarh")) tasks.push(chittorgarhScraper.getSubscriptions());
     if (sources.includes("groww")) tasks.push(growwScraper.getSubscriptions());
     if (sources.includes("investorgain")) tasks.push(investorGainScraper.getSubscriptions());
@@ -374,9 +371,6 @@ export class ScraperAggregator {
       let result: ScraperResult<any>;
 
       switch (source.toLowerCase()) {
-        case "nsetools":
-          result = await nseToolsScraper.fetchIpos();
-          break;
         case "groww":
           result = await growwScraper.getIpos();
           break;
@@ -410,7 +404,7 @@ export class ScraperAggregator {
   }
 
   async testAllConnections(): Promise<{ source: string; success: boolean; responseTimeMs: number; error?: string }[]> {
-    const sources = ["nsetools", "groww", "chittorgarh", "investorgain", "nse"];
+    const sources = ["groww", "chittorgarh", "investorgain", "nse"];
     const results = await Promise.all(sources.map(s => this.testConnection(s)));
     return results;
   }

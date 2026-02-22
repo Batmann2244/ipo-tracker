@@ -3,17 +3,12 @@ import * as cheerio from "cheerio";
 import type { InsertIpo } from "@shared/schema";
 import { calculateIpoScore } from "./scoring";
 
-import { Nse } from "./scrapers/nse-client";
-
-const nse = new Nse();
-
 /**
  * IPO SCRAPER - UNIFIED ARCHITECTURE
  * 
- * PRIMARY SOURCE: NSETools (Official NSE APIs)
+ * PRIMARY SOURCE: NSE Scraper (Direct API with Cookie Handling)
  *  ├─ getUpcomingIpos() - Upcoming IPO calendar
  *  ├─ getCurrentIpos() - Active bidding IPOs
- *  └─ getIpoList() - All IPOs
  * 
  * ENRICHMENT SOURCES: Web Scraping (Real-time data)
  *  ├─ Chittorgarh - Live subscription updates (QIB/HNI/Retail)
