@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from 'crypto';
 import { db } from '../db';
 import { apiKeys, subscriptions, apiUsageLogs, dailyUsageStats, TIER_LIMITS, type ApiKey, type Subscription } from '@shared/schema';
-import { eq, and, gte, sql } from 'drizzle-orm';
+import { eq, and, gte, sql, inArray } from 'drizzle-orm';
 
 const API_KEY_PREFIX = 'ipo_';
 const API_KEY_LENGTH = 32;
@@ -152,6 +152,36 @@ export async function getTodayUsageCount(apiKeyId: number): Promise<number> {
     ));
   
   return Number(result[0]?.count || 0);
+}
+
+export async function getTodayUsageCountsForKeys(apiKeyIds: number[]): Promise<Record<number, number>> {
+  if (apiKeyIds.length === 0) return {};
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const results = await db.select({
+      apiKeyId: apiUsageLogs.apiKeyId,
+      count: sql<number>`count(*)`
+    })
+    .from(apiUsageLogs)
+    .where(and(
+      inArray(apiUsageLogs.apiKeyId, apiKeyIds),
+      gte(apiUsageLogs.createdAt, today)
+    ))
+    .groupBy(apiUsageLogs.apiKeyId);
+
+  const usageMap: Record<number, number> = {};
+  // Initialize with 0 for all requested keys
+  apiKeyIds.forEach(id => usageMap[id] = 0);
+
+  results.forEach(row => {
+    if (row.apiKeyId) {
+      usageMap[row.apiKeyId] = Number(row.count);
+    }
+  });
+
+  return usageMap;
 }
 
 export async function logApiUsage(

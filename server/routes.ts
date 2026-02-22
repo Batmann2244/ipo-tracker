@@ -35,7 +35,8 @@ import {
   createOrUpdateSubscription,
   getUsageStats,
   getTodayUsageCount,
-  getTierLimits
+  getTierLimits,
+  getTodayUsageCountsForKeys
 } from "./services/api-key-service";
 import { scraperLogger } from "./services/scraper-logger";
 import { investorGainScraper } from "./services/scrapers/investorgain";
@@ -125,8 +126,11 @@ export async function registerRoutes(
       const keys = await getUserApiKeys(userId);
 
       // Add usage info for each key
-      const keysWithUsage = await Promise.all(keys.map(async (key) => {
-        const todayUsage = await getTodayUsageCount(key.id);
+      const keyIds = keys.map(k => k.id);
+      const usageMap = await getTodayUsageCountsForKeys(keyIds);
+
+      const keysWithUsage = keys.map((key) => {
+        const todayUsage = usageMap[key.id] || 0;
         const limits = getTierLimits(key.tier);
         return {
           id: key.id,
@@ -139,7 +143,7 @@ export async function registerRoutes(
           todayUsage,
           dailyLimit: limits.apiCallsPerDay,
         };
-      }));
+      });
 
       res.json(keysWithUsage);
     } catch (error) {
