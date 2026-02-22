@@ -1,4 +1,5 @@
 import * as client from "openid-client";
+import { randomBytes } from "crypto";
 import { Strategy, type VerifyFunction } from "openid-client/passport";
 
 import passport from "passport";
@@ -95,8 +96,8 @@ export async function setupAuth(app: Express) {
           profile_image_url: null,
           exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60 // 1 week
         },
-        access_token: "mock-access-token",
-        refresh_token: "mock-refresh-token",
+        access_token: randomBytes(32).toString("hex"),
+        refresh_token: randomBytes(32).toString("hex"),
         expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
       };
       
