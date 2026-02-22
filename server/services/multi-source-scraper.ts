@@ -1,5 +1,7 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { chittorgarhScraper } from "./scrapers/chittorgarh";
+import { ipoWatchScraper } from "./scrapers/ipowatch";
 
 const headers = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -79,40 +81,25 @@ function parseSubscriptionValue(text: string): number | null {
 
 export async function scrapeChittorgarhSubscription(): Promise<SubscriptionData[]> {
   console.log("📊 [Chittorgarh] Fetching subscription data...");
-  const url = "https://www.chittorgarh.com/report/ipo-subscription-status-live-mainboard-sme/21/";
 
   try {
-    const html = await fetchPage(url);
-    const $ = cheerio.load(html);
-    const results: SubscriptionData[] = [];
+    const result = await chittorgarhScraper.getSubscriptions();
 
-    $("table").find("tr").each((_, row) => {
-      const cells = $(row).find("td");
-      if (cells.length < 5) return;
+    if (!result.success) {
+      console.error("[Chittorgarh] Subscription fetch failed:", result.error);
+      return [];
+    }
 
-      const companyName = cells.eq(0).text().trim();
-      if (!companyName || companyName.length < 3) return;
-      if (companyName.toLowerCase().includes("company") || companyName.toLowerCase().includes("ipo name")) return;
-
-      const symbol = normalizeSymbol(companyName);
-      const qib = parseSubscriptionValue(cells.eq(1).text());
-      const hni = parseSubscriptionValue(cells.eq(2).text());
-      const retail = parseSubscriptionValue(cells.eq(3).text());
-      const total = parseSubscriptionValue(cells.eq(4).text());
-
-      if (symbol && symbol.length >= 3) {
-        results.push({
-          symbol,
-          companyName: companyName.replace(/\s+IPO$/i, "").trim(),
-          qib,
-          hni,
-          retail,
-          total,
-          source: "chittorgarh",
-          timestamp: new Date(),
-        });
-      }
-    });
+    const results: SubscriptionData[] = result.data.map((item) => ({
+      symbol: item.symbol,
+      companyName: item.companyName,
+      qib: item.qib,
+      hni: item.hni,
+      retail: item.retail,
+      total: item.total,
+      source: "chittorgarh",
+      timestamp: result.timestamp || new Date(),
+    }));
 
     console.log(`✅ [Chittorgarh] Found subscription data for ${results.length} IPOs`);
     return results;
@@ -209,8 +196,6 @@ export async function scrapeNseBidDetails(): Promise<SubscriptionData[]> {
     return [];
   }
 }
-
-import { ipoWatchScraper } from "./scrapers/ipowatch";
 
 export async function scrapeGmpFromMultipleSources(): Promise<GmpData[]> {
   console.log("💹 Fetching GMP from multiple sources...");
