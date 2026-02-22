@@ -3,7 +3,15 @@ import type { Server } from "http";
 import { createServer } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { insertIpoSchema, insertAlertPreferencesSchema, TIER_LIMITS } from "@shared/schema";
+import {
+  insertIpoSchema,
+  insertAlertPreferencesSchema,
+  TIER_LIMITS,
+  type InsertPeerCompany,
+  type InsertGmpHistory,
+  type InsertFundUtilization,
+  type InsertIpoTimeline
+} from "@shared/schema";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { z } from "zod";
 import { calculateIpoScore } from "./services/scoring";
@@ -411,6 +419,7 @@ export async function registerRoutes(
       let updated = 0;
       let analyticsAdded = 0;
 
+      // Prepare IPOs with InvestorGain data
       for (const ipo of scrapedIpos) {
         const normalizedName = ipo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
         const igMatch = igMap.get(normalizedName) || igMap.get(ipo.symbol.toLowerCase());
@@ -420,52 +429,68 @@ export async function registerRoutes(
           ipo.gmp = igMatch.gmp ?? ipo.gmp;
           ipo.basisOfAllotmentDate = igMatch.basisOfAllotmentDate ?? ipo.basisOfAllotmentDate;
         }
-        const existing = await storage.getIpoBySymbol(ipo.symbol);
-        const savedIpo = await storage.upsertIpo(ipo);
+      }
 
-        if (existing) {
+      // Check existing symbols to calculate created/updated counts
+      const allExistingIpos = await storage.getIpos();
+      const existingSymbols = new Set(allExistingIpos.map(i => i.symbol));
+
+      for (const ipo of scrapedIpos) {
+        if (existingSymbols.has(ipo.symbol)) {
           updated++;
         } else {
           created++;
         }
+      }
 
-        // Generate analytics data for each IPO
+      // Batch Upsert IPOs
+      const savedIpos = await storage.batchUpsertIpos(scrapedIpos);
+      const savedIpoIds = savedIpos.map(i => i.id);
+
+      // Batch fetch related data
+      const [existingPeersMap, existingFundsMap, existingTimelineMap] = await Promise.all([
+        storage.batchGetPeerCompanies(savedIpoIds),
+        storage.batchGetFundUtilization(savedIpoIds),
+        storage.batchGetIpoTimeline(savedIpoIds),
+      ]);
+
+      const peersToAdd: InsertPeerCompany[] = [];
+      const gmpHistoryToAdd: InsertGmpHistory[] = [];
+      const fundsToAdd: InsertFundUtilization[] = [];
+      const timelineEventsToAdd: InsertIpoTimeline[] = [];
+
+      for (const savedIpo of savedIpos) {
         const ipoId = savedIpo.id;
         const sector = savedIpo.sector || "Industrial";
 
-        // Check if analytics data exists, if not generate it
-        const existingPeers = await storage.getPeerCompanies(ipoId);
+        // Peers
+        const existingPeers = existingPeersMap.get(ipoId) || [];
         if (existingPeers.length === 0) {
           const peers = generatePeerCompanies(ipoId, sector);
-          for (const peer of peers) {
-            await storage.addPeerCompany(peer);
-          }
+          peersToAdd.push(...peers);
           analyticsAdded++;
         }
 
-        // Add GMP history entry
+        // GMP History
         if (savedIpo.gmp !== null) {
-          await storage.addGmpHistory({
+          gmpHistoryToAdd.push({
             ipoId,
             gmp: savedIpo.gmp,
-            gmpPercentage: savedIpo.gmp * 0.8, // Approximate percentage
+            gmpPercentage: savedIpo.gmp * 0.8,
           });
         }
 
-        // Generate fund utilization if not exists
-        const existingFunds = await storage.getFundUtilization(ipoId);
+        // Fund Utilization
+        const existingFunds = existingFundsMap.get(ipoId) || [];
         if (existingFunds.length === 0) {
           const funds = generateFundUtilization(ipoId);
-          for (const fund of funds) {
-            await storage.addFundUtilization(fund);
-          }
+          fundsToAdd.push(...funds);
         }
 
-        // Generate timeline events for all IPOs
-        const existingTimeline = await storage.getIpoTimeline(ipoId);
+        // Timeline
+        const existingTimeline = existingTimelineMap.get(ipoId) || [];
         if (existingTimeline.length === 0) {
-          // Use expected date if available, otherwise use a future date (30 days from now)
-          const baseDate = savedIpo.expectedDate
+           const baseDate = savedIpo.expectedDate
             ? new Date(savedIpo.expectedDate)
             : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
@@ -482,7 +507,7 @@ export async function registerRoutes(
           for (const event of events) {
             const eventDate = new Date(baseDate);
             eventDate.setDate(eventDate.getDate() + event.offsetDays);
-            await storage.addTimelineEvent({
+            timelineEventsToAdd.push({
               ipoId,
               eventType: event.type,
               eventDate: eventDate.toISOString().split('T')[0],
@@ -492,6 +517,14 @@ export async function registerRoutes(
           }
         }
       }
+
+      // Batch Insert Related Data
+      await Promise.all([
+        peersToAdd.length > 0 ? storage.batchAddPeerCompanies(peersToAdd) : Promise.resolve(),
+        gmpHistoryToAdd.length > 0 ? storage.batchAddGmpHistory(gmpHistoryToAdd) : Promise.resolve(),
+        fundsToAdd.length > 0 ? storage.batchAddFundUtilization(fundsToAdd) : Promise.resolve(),
+        timelineEventsToAdd.length > 0 ? storage.batchAddTimelineEvents(timelineEventsToAdd) : Promise.resolve(),
+      ]);
 
       console.log(`✅ Sync complete: ${created} created, ${updated} updated, ${analyticsAdded} analytics generated`);
 
@@ -544,16 +577,19 @@ export async function registerRoutes(
       let created = 0;
       let updated = 0;
 
-      for (const ipo of scrapedIpos) {
-        const existing = await storage.getIpoBySymbol(ipo.symbol);
-        await storage.upsertIpo(ipo);
+      // Check existing symbols to calculate created/updated counts
+      const allExistingIpos = await storage.getIpos();
+      const existingSymbols = new Set(allExistingIpos.map(i => i.symbol));
 
-        if (existing) {
+      for (const ipo of scrapedIpos) {
+        if (existingSymbols.has(ipo.symbol)) {
           updated++;
         } else {
           created++;
         }
       }
+
+      await storage.batchUpsertIpos(scrapedIpos);
 
       console.log(`✅ Clean sync complete: ${created} created, ${updated} updated`);
 
