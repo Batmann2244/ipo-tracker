@@ -86,6 +86,7 @@ export function IpoCard({ ipo, compact = false, onClick }: IpoCardProps) {
 
   const handleWatch = (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (isWatching) return;
     
     addToWatchlist(ipo.id, {
@@ -111,7 +112,7 @@ export function IpoCard({ ipo, compact = false, onClick }: IpoCardProps) {
     return (
       <Link href={`/ipos/${ipo.id}`}>
         <div 
-          className="group cursor-pointer bg-card rounded-lg border border-border p-4 hover:shadow-md transition-all"
+          className="group cursor-pointer bg-card rounded-lg border border-border p-4 hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
           data-testid={`card-ipo-compact-${ipo.id}`}
         >
           <div className="flex justify-between items-start mb-3">
@@ -142,7 +143,7 @@ export function IpoCard({ ipo, compact = false, onClick }: IpoCardProps) {
 
   return (
     <div 
-      className="group bg-card rounded-lg border border-border p-5 flex flex-col hover:shadow-md transition-all cursor-pointer"
+      className="group bg-card rounded-lg border border-border p-5 flex flex-col hover:shadow-lg hover:scale-[1.02] transition-all duration-200 cursor-pointer"
       data-testid={`card-ipo-${ipo.id}`}
       onClick={onClick}
     >
@@ -194,7 +195,7 @@ export function IpoCard({ ipo, compact = false, onClick }: IpoCardProps) {
       </div>
 
       <div className="flex items-center gap-2 mt-auto">
-        <Link href={`/ipos/${ipo.id}`} className="flex-1">
+        <Link href={`/ipos/${ipo.id}`} className="flex-1" onClick={(e) => e.stopPropagation()}>
           <Button 
             className="w-full justify-between bg-foreground text-background hover:bg-foreground/90 font-medium"
             data-testid={`button-analyze-${ipo.id}`}
