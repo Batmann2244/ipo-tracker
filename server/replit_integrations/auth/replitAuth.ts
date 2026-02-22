@@ -31,12 +31,20 @@ export function getSession() {
     checkPeriod: sessionTtl
   });
 
-  if (!process.env.SESSION_SECRET && process.env.NODE_ENV === "production") {
-    throw new Error("SESSION_SECRET environment variable must be set in production");
+  if (!process.env.SESSION_SECRET) {
+    const generatedSecret = randomBytes(32).toString("hex");
+    process.env.SESSION_SECRET = generatedSecret;
+    if (process.env.NODE_ENV === "production") {
+      console.warn(
+        "WARNING: SESSION_SECRET environment variable is not set. " +
+        "A random secret has been generated, but sessions will not persist across server restarts. " +
+        "Set SESSION_SECRET in your environment for persistent sessions."
+      );
+    }
   }
   
   return session({
-    secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
+    secret: process.env.SESSION_SECRET,
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
