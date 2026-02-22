@@ -39,6 +39,7 @@ import {
 } from "./services/api-key-service";
 import { scraperLogger } from "./services/scraper-logger";
 import { investorGainScraper } from "./services/scrapers/investorgain";
+import { requireAuth, requireAdmin } from "./middleware/auth";
 
 export async function registerRoutes(
   httpServer: Server, // Accept httpServer as parameter
@@ -48,14 +49,6 @@ export async function registerRoutes(
   // Setup Auth
   await setupAuth(app);
   registerAuthRoutes(app);
-
-  // Auth middleware
-  const requireAuth = (req: any, res: any, next: any) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized - Please sign in" });
-    }
-    next();
-  };
 
   // Debug Routes - Scraper Testing (development only)
   if (process.env.NODE_ENV !== "production") {
@@ -377,7 +370,7 @@ export async function registerRoutes(
   });
 
   // Admin/Sync Routes - Protected by authentication
-  app.get("/api/admin/sync/test", requireAuth, async (req, res) => {
+  app.get("/api/admin/sync/test", requireAdmin, async (req, res) => {
     try {
       const result = await testScraper();
       res.json(result);
@@ -389,7 +382,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/sync", requireAuth, async (req, res) => {
+  app.post("/api/admin/sync", requireAdmin, async (req, res) => {
     try {
       console.log("🔄 Starting IPO data sync from multiple sources...");
 
@@ -512,7 +505,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/stats", requireAuth, async (req, res) => {
+  app.get("/api/admin/stats", requireAdmin, async (req, res) => {
     const count = await storage.getIpoCount();
     const ipos = await storage.getIpos();
 
@@ -531,7 +524,7 @@ export async function registerRoutes(
     res.json(stats);
   });
 
-  app.post("/api/admin/sync/clean", requireAuth, async (req, res) => {
+  app.post("/api/admin/sync/clean", requireAdmin, async (req, res) => {
     try {
       console.log("🧹 Starting clean sync - marking old IPOs as listed...");
 
@@ -580,17 +573,17 @@ export async function registerRoutes(
     res.json(status);
   });
 
-  app.post("/api/scheduler/start", requireAuth, async (req, res) => {
+  app.post("/api/scheduler/start", requireAdmin, async (req, res) => {
     startScheduler();
     res.json({ success: true, message: "Scheduler started" });
   });
 
-  app.post("/api/scheduler/stop", requireAuth, async (req, res) => {
+  app.post("/api/scheduler/stop", requireAdmin, async (req, res) => {
     stopScheduler();
     res.json({ success: true, message: "Scheduler stopped" });
   });
 
-  app.post("/api/scheduler/poll", requireAuth, async (req, res) => {
+  app.post("/api/scheduler/poll", requireAdmin, async (req, res) => {
     try {
       const result = await triggerManualPoll();
       res.json({ success: true, ...result });
@@ -608,7 +601,7 @@ export async function registerRoutes(
     res.json(alerts);
   });
 
-  app.delete("/api/scheduler/alerts", requireAuth, async (req, res) => {
+  app.delete("/api/scheduler/alerts", requireAdmin, async (req, res) => {
     clearAlerts();
     res.json({ success: true, message: "Alerts cleared" });
   });
@@ -763,7 +756,7 @@ export async function registerRoutes(
   });
 
   // AI Analysis Routes
-  app.post("/api/ipos/:id/analyze", requireAuth, async (req, res) => {
+  app.post("/api/ipos/:id/analyze", requireAdmin, async (req, res) => {
     try {
       const ipo = await storage.getIpo(Number(req.params.id));
       if (!ipo) {
@@ -826,7 +819,7 @@ export async function registerRoutes(
   });
 
   // Test alert sending (admin only)
-  app.post("/api/admin/test-alert/:id", requireAuth, async (req, res) => {
+  app.post("/api/admin/test-alert/:id", requireAdmin, async (req, res) => {
     try {
       const userId = (req.user as any).claims.sub;
       const ipo = await storage.getIpo(Number(req.params.id));
@@ -859,7 +852,7 @@ export async function registerRoutes(
   });
 
   // Scraper Logger Routes
-  app.get("/api/admin/scraper-logs", requireAuth, async (req, res) => {
+  app.get("/api/admin/scraper-logs", requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit) || 50, 200);
       const logs = await scraperLogger.getRecentLogs(limit);
@@ -869,7 +862,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/scraper-logs/source/:source", requireAuth, async (req, res) => {
+  app.get("/api/admin/scraper-logs/source/:source", requireAdmin, async (req, res) => {
     try {
       const source = req.params.source as any;
       const limit = Math.min(Number(req.query.limit) || 20, 100);
@@ -880,7 +873,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/scraper-stats", requireAuth, async (req, res) => {
+  app.get("/api/admin/scraper-stats", requireAdmin, async (req, res) => {
     try {
       const hoursBack = Number(req.query.hours) || 24;
       const stats = await scraperLogger.getSourceStats(hoursBack);
@@ -890,7 +883,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/scraper-health", requireAuth, async (req, res) => {
+  app.get("/api/admin/scraper-health", requireAdmin, async (req, res) => {
     try {
       const health = await scraperLogger.getHealthStatus();
       res.json(health);
@@ -899,7 +892,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/sync-investorgain-ids", requireAuth, async (req, res) => {
+  app.post("/api/admin/sync-investorgain-ids", requireAdmin, async (req, res) => {
     try {
       const iposResult = await investorGainScraper.getIpos();
       if (!iposResult.success || iposResult.data.length === 0) {
