@@ -3,10 +3,6 @@ import * as cheerio from "cheerio";
 import type { InsertIpo } from "@shared/schema";
 import { calculateIpoScore } from "./scoring";
 
-import { Nse } from "./scrapers/nse-client";
-
-const nse = new Nse();
-
 /**
  * IPO SCRAPER - UNIFIED ARCHITECTURE
  * 
