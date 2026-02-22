@@ -19,7 +19,6 @@ import {
   fetchAllGmp,
   testScraperConnection,
   testAllScrapers,
-  nseToolsScraper,
   chittorgarhScraper,
   growwScraper,
   investorGainScraper,
@@ -110,7 +109,7 @@ export function registerScraperDebugRoutes(app: Express) {
     try {
       const sources = (req.query.sources as string)
         ?.split(",")
-        .map((s) => s.trim()) || ["nsetools", "groww", "chittorgarh"];
+        .map((s) => s.trim()) || ["groww", "chittorgarh", "nse"];
 
       console.log(`📊 Fetching IPOs from sources:`, sources);
       const startTime = Date.now();
@@ -162,10 +161,10 @@ export function registerScraperDebugRoutes(app: Express) {
       const sources = (req.query.sources as string)
         ?.split(",")
         .map((s) => s.trim()) || [
-          "nsetools",
           "chittorgarh",
           "groww",
           "investorgain",
+          "nse",
         ];
 
       console.log(`📊 Fetching subscriptions from sources:`, sources);
@@ -301,9 +300,6 @@ export function registerScraperDebugRoutes(app: Express) {
       let result: any;
 
       switch (name.toLowerCase()) {
-        case "nsetools":
-          result = await nseToolsScraper.fetchIpos();
-          break;
         case "groww":
           result = await growwScraper.getIpos();
           break;
@@ -324,7 +320,6 @@ export function registerScraperDebugRoutes(app: Express) {
           return res.status(400).json({
             error: "Invalid source",
             validSources: [
-              "nsetools",
               "groww",
               "chittorgarh",
               "investorgain",
@@ -360,9 +355,6 @@ export function registerScraperDebugRoutes(app: Express) {
       let result: any;
 
       switch (name.toLowerCase()) {
-        case "nsetools":
-          result = await nseToolsScraper.fetchSubscriptions();
-          break;
         case "groww":
           result = await growwScraper.getSubscriptions();
           break;
@@ -379,7 +371,6 @@ export function registerScraperDebugRoutes(app: Express) {
           return res.status(400).json({
             error: "Invalid source",
             validSources: [
-              "nsetools",
               "groww",
               "chittorgarh",
               "investorgain",

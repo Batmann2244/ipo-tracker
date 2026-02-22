@@ -5,7 +5,6 @@ export { growwScraper, GrowwScraper } from "./groww";
 export { investorGainScraper, InvestorGainScraper } from "./investorgain";
 export { investorgainApiScraper } from './investorgain-api';
 export { nseScraper, NseScraper } from "./nse";
-export { nseToolsScraper, NseToolsScraper } from "./nsetools";
 export { ipoAlertsScraper } from "./ipoalerts";
 export { bseScraper, BseScraper } from "./bse";
 export { ipoWatchScraper, IpoWatchScraper } from "./ipowatch";

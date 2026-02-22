@@ -6,6 +6,8 @@ import {
   ScraperResult,
   normalizeSymbol,
   parseDate,
+  generateScores,
+  generateRiskAssessment,
 } from "./base";
 import axios, { AxiosRequestConfig } from 'axios';
 
@@ -241,6 +243,20 @@ export class NseScraper extends BaseScraper {
       issueSizeCrores,
       status: defaultStatus,
       ipoType: "mainboard",
+      ...generateScores({
+        symbol,
+        companyName: ipo.companyName,
+        priceMin,
+        priceMax,
+        status: defaultStatus,
+      }),
+      ...generateRiskAssessment({
+        symbol,
+        companyName: ipo.companyName,
+        priceMin,
+        priceMax,
+        status: defaultStatus,
+      }),
     };
   }
 
