@@ -239,12 +239,11 @@ export abstract class BaseScraper {
     throw lastError || new Error(`Failed to fetch ${url}`);
   }
 
-  protected async fetchWithPuppeteer(url: string, waitForSelector: string = 'body', waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2' = 'networkidle2'): Promise<string> {
-    const startTime = Date.now();
-    let browser;
-    try {
-      this.sourceLogger.info(`Launching Puppeteer for ${url}`);
-      browser = await puppeteer.launch({
+  private static browserPromise: Promise<puppeteer.Browser> | null = null;
+
+  protected static async getBrowser(): Promise<puppeteer.Browser> {
+    if (!BaseScraper.browserPromise) {
+      BaseScraper.browserPromise = puppeteer.launch({
         headless: true,
         args: [
           '--no-sandbox',
@@ -260,8 +259,26 @@ export abstract class BaseScraper {
           '--metrics-recording-only',
           '--mute-audio'
         ]
+      }).then(browser => {
+        browser.on('disconnected', () => {
+          BaseScraper.browserPromise = null;
+        });
+        return browser;
+      }).catch(err => {
+        BaseScraper.browserPromise = null;
+        throw err;
       });
-      const page = await browser.newPage();
+    }
+    return BaseScraper.browserPromise;
+  }
+
+  protected async fetchWithPuppeteer(url: string, waitForSelector: string = 'body', waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2' = 'networkidle2'): Promise<string> {
+    const startTime = Date.now();
+    let page;
+    try {
+      this.sourceLogger.info(`Using shared Puppeteer browser for ${url}`);
+      const browser = await BaseScraper.getBrowser();
+      page = await browser.newPage();
       await page.setViewport({ width: 1920, height: 1080 });
 
       // PERFORMANCE: Block unnecessary resources (30-40% speed boost)
@@ -292,7 +309,7 @@ export abstract class BaseScraper {
       }
 
       const content = await page.content();
-      await browser.close();
+      await page.close();
 
       this.sourceLogger.info("Fetched page with Puppeteer", {
         url,
@@ -301,7 +318,7 @@ export abstract class BaseScraper {
 
       return content;
     } catch (err: any) {
-      if (browser) await browser.close().catch(() => { });
+      if (page) await page.close().catch(() => { });
       throw new Error(`Puppeteer fetch failed: ${err.message}`);
     }
   }
