@@ -5,9 +5,18 @@ import { IpoTable } from "@/components/IpoTable";
 import { IpoDetailModal } from "@/components/IpoDetailModal";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
-import { Search, Loader2, LayoutGrid, Table, TrendingUp, Clock, CheckCircle2, ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, LayoutGrid, Table, TrendingUp, Clock, CheckCircle2, ArrowUpRight } from "lucide-react";
 import type { Ipo } from "@shared/schema";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import { DashboardSkeleton } from "@/components/DashboardSkeleton";
 
 type ViewMode = "cards" | "table";
 
@@ -62,6 +71,10 @@ export default function Dashboard() {
     { label: "Listed", value: stats.listed, icon: CheckCircle2, color: "text-gray-600", bgColor: "bg-gray-50" },
   ];
 
+  if (isLoading) {
+    return <DashboardSkeleton />;
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -91,32 +104,20 @@ export default function Dashboard() {
       </div>
 
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-card p-4 rounded-lg border border-border">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setViewMode("cards")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              viewMode === "cards" 
-                ? "bg-primary text-white" 
-                : "text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            <LayoutGrid className="w-4 h-4" />
-            Cards
-          </button>
-          <button
-            onClick={() => setViewMode("table")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              viewMode === "table" 
-                ? "bg-primary text-white" 
-                : "text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            <Table className="w-4 h-4" />
-            Table
-          </button>
-        </div>
+        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+          <TabsList>
+            <TabsTrigger value="cards">
+              <LayoutGrid className="w-4 h-4 mr-2" />
+              Cards
+            </TabsTrigger>
+            <TabsTrigger value="table">
+              <Table className="w-4 h-4 mr-2" />
+              Table
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
-        <div className="flex items-center gap-4 flex-1 max-w-xl">
+        <div className="flex items-center gap-4 flex-1 max-w-xl w-full">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input 
@@ -128,7 +129,7 @@ export default function Dashboard() {
           </div>
           
           <div className="flex items-center gap-2 text-sm whitespace-nowrap">
-            <span className="text-muted-foreground">Show SME:</span>
+            <span className="text-muted-foreground hidden sm:inline-block">Show SME:</span>
             <Switch 
               checked={showSme} 
               onCheckedChange={setShowSme}
@@ -137,11 +138,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-      ) : viewMode === "table" ? (
+      {viewMode === "table" ? (
         <IpoTable ipos={filteredIpos} />
       ) : (
         <div className="space-y-8">
@@ -181,26 +178,34 @@ export default function Dashboard() {
                 ))}
               </div>
               {Math.ceil(upcomingIpos.length / ITEMS_PER_PAGE) > 1 && (
-                <div className="flex items-center justify-center gap-2 mt-6">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setUpcomingPage(Math.max(0, upcomingPage - 1))}
-                    disabled={upcomingPage === 0}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="text-sm text-muted-foreground">
-                    Page {upcomingPage + 1} of {Math.ceil(upcomingIpos.length / ITEMS_PER_PAGE)}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setUpcomingPage(Math.min(Math.ceil(upcomingIpos.length / ITEMS_PER_PAGE) - 1, upcomingPage + 1))}
-                    disabled={upcomingPage === Math.ceil(upcomingIpos.length / ITEMS_PER_PAGE) - 1}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
+                <div className="mt-6">
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious
+                          onClick={() => setUpcomingPage(Math.max(0, upcomingPage - 1))}
+                          className={upcomingPage === 0 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                        />
+                      </PaginationItem>
+                      {[...Array(Math.ceil(upcomingIpos.length / ITEMS_PER_PAGE))].map((_, i) => (
+                        <PaginationItem key={i}>
+                          <PaginationLink
+                            isActive={upcomingPage === i}
+                            onClick={() => setUpcomingPage(i)}
+                            className="cursor-pointer"
+                          >
+                            {i + 1}
+                          </PaginationLink>
+                        </PaginationItem>
+                      ))}
+                      <PaginationItem>
+                        <PaginationNext
+                          onClick={() => setUpcomingPage(Math.min(Math.ceil(upcomingIpos.length / ITEMS_PER_PAGE) - 1, upcomingPage + 1))}
+                          className={upcomingPage === Math.ceil(upcomingIpos.length / ITEMS_PER_PAGE) - 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
                 </div>
               )}
             </section>
@@ -223,26 +228,34 @@ export default function Dashboard() {
                 ))}
               </div>
               {Math.ceil(listedIpos.length / ITEMS_PER_PAGE) > 1 && (
-                <div className="flex items-center justify-center gap-2 mt-6">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setListedPage(Math.max(0, listedPage - 1))}
-                    disabled={listedPage === 0}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="text-sm text-muted-foreground">
-                    Page {listedPage + 1} of {Math.ceil(listedIpos.length / ITEMS_PER_PAGE)}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setListedPage(Math.min(Math.ceil(listedIpos.length / ITEMS_PER_PAGE) - 1, listedPage + 1))}
-                    disabled={listedPage === Math.ceil(listedIpos.length / ITEMS_PER_PAGE) - 1}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
+                 <div className="mt-6">
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious
+                          onClick={() => setListedPage(Math.max(0, listedPage - 1))}
+                          className={listedPage === 0 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                        />
+                      </PaginationItem>
+                       {[...Array(Math.ceil(listedIpos.length / ITEMS_PER_PAGE))].map((_, i) => (
+                        <PaginationItem key={i}>
+                          <PaginationLink
+                            isActive={listedPage === i}
+                            onClick={() => setListedPage(i)}
+                            className="cursor-pointer"
+                          >
+                            {i + 1}
+                          </PaginationLink>
+                        </PaginationItem>
+                      ))}
+                      <PaginationItem>
+                        <PaginationNext
+                          onClick={() => setListedPage(Math.min(Math.ceil(listedIpos.length / ITEMS_PER_PAGE) - 1, listedPage + 1))}
+                          className={listedPage === Math.ceil(listedIpos.length / ITEMS_PER_PAGE) - 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
                 </div>
               )}
             </section>
