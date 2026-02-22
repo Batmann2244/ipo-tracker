@@ -1,6 +1,7 @@
 import { IpoData, ScraperResult, normalizeSymbol } from "./base";
 import { scraperLogger } from "../scraper-logger";
 import { getSourceLogger } from "../../logger";
+import pLimit from "p-limit";
 
 const API_BASE = "https://api.ipoalerts.in";
 const API_KEY = process.env.IPOALERTS_API_KEY;
@@ -259,29 +260,84 @@ async function getIposByStatus(
   const allIpos: IpoData[] = [];
 
   try {
-    let page = 1;
-    let totalPages = 1;
+    let totalPages = 0;
 
-    while (page <= totalPages && canMakeRequest()) {
-      const response = await fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}&page=${page}`) as IpoAlertsResponse;
+    // Fetch first page to determine total pages
+    if (canMakeRequest()) {
+      const firstPageResponse = await fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}&page=1`) as IpoAlertsResponse;
 
-      // Update pagination info
-      totalPages = response.meta?.totalPages || 1;
+      totalPages = firstPageResponse.meta?.totalPages || 1;
 
       sourceLogger.info("IPOAlerts page received", {
         status,
-        page,
+        page: 1,
         totalPages,
-        ipos: response.ipos.length,
-        count: response.meta?.count,
-        countOnPage: response.meta?.countOnPage,
-        limit: response.meta?.limit,
-        info: response.meta?.info,
+        ipos: firstPageResponse.ipos.length,
+        count: firstPageResponse.meta?.count,
+        countOnPage: firstPageResponse.meta?.countOnPage,
+        limit: firstPageResponse.meta?.limit,
+        info: firstPageResponse.meta?.info,
       });
 
-      // Collect IPOs
-      allIpos.push(...response.ipos.map(parseIpoData));
-      page++;
+      // Collect IPOs from first page
+      allIpos.push(...firstPageResponse.ipos.map(parseIpoData));
+
+      // Fetch remaining pages in parallel if allowed
+      if (totalPages > 1) {
+        const remainingRequests = getRemainingRequests();
+        // Since we just fetched page 1, remainingRequests is updated.
+        // We need pages 2 to totalPages.
+        const pagesNeeded = totalPages - 1;
+        const pagesToFetchCount = Math.min(pagesNeeded, remainingRequests);
+
+        if (pagesToFetchCount > 0) {
+          const parallelPages = Array.from({ length: pagesToFetchCount }, (_, i) => i + 2);
+
+          sourceLogger.info(`Fetching ${pagesToFetchCount} additional pages in parallel`, {
+            status,
+            pages: parallelPages,
+            remainingRequests
+          });
+
+          const limit = pLimit(5); // Concurrency limit
+
+          const promises = parallelPages.map(page =>
+            limit(async () => {
+              try {
+                const res = await fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}&page=${page}`) as IpoAlertsResponse;
+                return { page, res, success: true };
+              } catch (err) {
+                return { page, err, success: false };
+              }
+            })
+          );
+
+          const results = await Promise.all(promises);
+
+          for (const result of results) {
+            if (result.success && result.res) {
+              const { page, res } = result;
+              sourceLogger.info("IPOAlerts page received (parallel)", {
+                status,
+                page,
+                ipos: res.ipos.length
+              });
+              allIpos.push(...res.ipos.map(parseIpoData));
+            } else {
+              sourceLogger.error(`Failed to fetch page ${result.page} in parallel`, {
+                status,
+                error: result.err instanceof Error ? result.err.message : String(result.err)
+              });
+            }
+          }
+        } else if (pagesNeeded > 0) {
+          sourceLogger.warn("Daily limit reached, cannot fetch all pages", {
+            status,
+            pagesNeeded,
+            remainingRequests
+          });
+        }
+      }
     }
 
     if (isScheduled && (status === 'open' || status === 'upcoming' || status === 'listed')) {
