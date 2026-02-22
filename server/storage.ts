@@ -29,7 +29,7 @@ import {
   type IpoTimelineEvent,
   type InsertIpoTimeline,
 } from "@shared/schema";
-import { eq, ne, and, desc, gte } from "drizzle-orm";
+import { eq, ne, and, desc, gte, getTableColumns, sql, type SQL } from "drizzle-orm";
 import { authStorage, IAuthStorage } from "./replit_integrations/auth/storage";
 
 export interface IStorage extends IAuthStorage {
@@ -39,6 +39,7 @@ export interface IStorage extends IAuthStorage {
   getIpoBySymbol(symbol: string): Promise<Ipo | undefined>;
   createIpo(ipo: InsertIpo): Promise<Ipo>;
   upsertIpo(ipo: InsertIpo): Promise<Ipo>;
+  bulkUpsertIpos(ipos: InsertIpo[]): Promise<Ipo[]>;
   updateIpo(id: number, data: Partial<InsertIpo>): Promise<Ipo | undefined>;
   getIpoCount(): Promise<number>;
   markAllAsListed(): Promise<number>;
@@ -156,6 +157,49 @@ export class DatabaseStorage implements IStorage {
       }
       
       return this.createIpo(insertIpo);
+    }
+  }
+
+  async bulkUpsertIpos(insertIpos: InsertIpo[]): Promise<Ipo[]> {
+    if (insertIpos.length === 0) return [];
+
+    try {
+      const columns = getTableColumns(ipos);
+      const updateSet: Record<string, SQL> = {};
+
+      for (const [key, col] of Object.entries(columns)) {
+        if (key !== 'id' && key !== 'symbol' && key !== 'createdAt') {
+           updateSet[key] = sql.raw(`excluded.${col.name}`);
+        }
+      }
+
+      // Ensure updatedAt is updated
+      const iposWithDate = insertIpos.map(ipo => ({
+        ...ipo,
+        updatedAt: new Date()
+      }));
+
+      const result = await db
+        .insert(ipos)
+        .values(iposWithDate)
+        .onConflictDoUpdate({
+          target: ipos.symbol,
+          set: updateSet,
+        })
+        .returning();
+
+      return result;
+    } catch (error) {
+      console.error("Bulk upsert failed, falling back to individual upserts", error);
+      const results: Ipo[] = [];
+      for (const ipo of insertIpos) {
+        try {
+          results.push(await this.upsertIpo(ipo));
+        } catch (e) {
+          console.error(`Failed to upsert IPO ${ipo.symbol} in fallback`, e);
+        }
+      }
+      return results;
     }
   }
 
