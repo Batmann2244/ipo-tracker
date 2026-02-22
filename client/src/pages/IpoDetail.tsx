@@ -243,6 +243,15 @@ export default function IpoDetail() {
     </div>
   );
 
+  // Parse JSON fields safely
+  const redFlags: string[] = typeof ipo.redFlags === 'string'
+    ? JSON.parse(ipo.redFlags)
+    : (Array.isArray(ipo.redFlags) ? ipo.redFlags : []);
+
+  const pros: string[] = typeof ipo.pros === 'string'
+    ? JSON.parse(ipo.pros)
+    : (Array.isArray(ipo.pros) ? ipo.pros : []);
+
   return (
     <div className="max-w-5xl mx-auto pb-12">
       <Link href="/dashboard">
@@ -355,14 +364,14 @@ export default function IpoDetail() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-6">
-            {ipo.redFlags && ipo.redFlags.length > 0 && (
+            {redFlags.length > 0 && (
               <div className="bg-card rounded-lg border border-red-200 p-6">
                 <h3 className="text-base font-bold text-red-700 mb-4 flex items-center gap-2">
                   <XCircle className="w-5 h-5" />
-                  Risk Flags ({ipo.redFlags.length})
+                  Risk Flags ({redFlags.length})
                 </h3>
                 <ul className="space-y-3">
-                  {ipo.redFlags.map((flag, idx) => (
+                  {redFlags.map((flag, idx) => (
                     <li key={idx} className="flex items-start gap-3 text-sm text-muted-foreground">
                       <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
                       {flag}
@@ -372,14 +381,14 @@ export default function IpoDetail() {
               </div>
             )}
 
-            {ipo.pros && ipo.pros.length > 0 && (
+            {pros.length > 0 && (
               <div className="bg-card rounded-lg border border-green-200 p-6">
                 <h3 className="text-base font-bold text-green-700 mb-4 flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5" />
-                  Positives ({ipo.pros.length})
+                  Positives ({pros.length})
                 </h3>
                 <ul className="space-y-3">
-                  {ipo.pros.map((pro, idx) => (
+                  {pros.map((pro, idx) => (
                     <li key={idx} className="flex items-start gap-3 text-sm text-muted-foreground">
                       <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
                       {pro}

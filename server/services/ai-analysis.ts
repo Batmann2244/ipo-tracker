@@ -178,8 +178,16 @@ function buildAnalysisPrompt(ipo: Ipo): string {
   if (ipo.promoterHolding) metrics.push(`Promoter Holding: ${ipo.promoterHolding}%`);
   if (ipo.gmp) metrics.push(`Grey Market Premium: ₹${ipo.gmp}`);
   
-  const redFlags = ipo.redFlags?.length ? `\nRed Flags: ${ipo.redFlags.join(", ")}` : "";
-  const pros = ipo.pros?.length ? `\nPositives: ${ipo.pros.join(", ")}` : "";
+  const redFlagsList: string[] = typeof ipo.redFlags === 'string'
+    ? JSON.parse(ipo.redFlags)
+    : (Array.isArray(ipo.redFlags) ? ipo.redFlags : []);
+
+  const prosList: string[] = typeof ipo.pros === 'string'
+    ? JSON.parse(ipo.pros)
+    : (Array.isArray(ipo.pros) ? ipo.pros : []);
+
+  const redFlags = redFlagsList.length ? `\nRed Flags: ${redFlagsList.join(", ")}` : "";
+  const pros = prosList.length ? `\nPositives: ${prosList.join(", ")}` : "";
   
   return `Analyze this IPO for Indian market investors:
 
