@@ -81,6 +81,7 @@ export interface IStorage extends IAuthStorage {
   // IPO Timeline
   getIpoTimeline(ipoId: number): Promise<IpoTimelineEvent[]>;
   addTimelineEvent(event: InsertIpoTimeline): Promise<IpoTimelineEvent>;
+  addTimelineEvents(events: InsertIpoTimeline[]): Promise<IpoTimelineEvent[]>;
   getAllUpcomingEvents(days?: number): Promise<(IpoTimelineEvent & { ipo: Ipo })[]>;
 }
 
@@ -385,6 +386,11 @@ export class DatabaseStorage implements IStorage {
   async addTimelineEvent(event: InsertIpoTimeline): Promise<IpoTimelineEvent> {
     const [created] = await db.insert(ipoTimeline).values(event).returning();
     return created;
+  }
+
+  async addTimelineEvents(events: InsertIpoTimeline[]): Promise<IpoTimelineEvent[]> {
+    if (events.length === 0) return [];
+    return await db.insert(ipoTimeline).values(events).returning();
   }
 
   async getAllUpcomingEvents(days: number = 30): Promise<(IpoTimelineEvent & { ipo: Ipo })[]> {

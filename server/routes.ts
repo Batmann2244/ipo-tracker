@@ -342,17 +342,18 @@ export async function registerRoutes(
           { type: "listing", offsetDays: 10, description: "Shares listed on exchange" },
         ];
 
-        for (const event of events) {
+        const timelineEvents = events.map(event => {
           const eventDate = new Date(baseDate);
           eventDate.setDate(eventDate.getDate() + event.offsetDays);
-          await storage.addTimelineEvent({
+          return {
             ipoId,
             eventType: event.type,
             eventDate: eventDate.toISOString().split('T')[0],
             description: event.description,
             isConfirmed: event.offsetDays <= 0,
-          });
-        }
+          };
+        });
+        await storage.addTimelineEvents(timelineEvents);
       }
 
       res.status(201).json(item);
