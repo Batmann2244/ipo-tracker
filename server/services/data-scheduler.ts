@@ -10,6 +10,7 @@ import {
 import { scraperAggregator } from "./scrapers";
 import { storage } from "../storage";
 import { ipoAlertsScraper } from "./scrapers/ipoalerts";
+import { type InsertIpo } from "@shared/schema";
 
 interface SchedulerState {
   isRunning: boolean;
@@ -46,25 +47,26 @@ async function fetchFromIpoAlertsIfScheduled(): Promise<void> {
     const result = await ipoAlertsScraper.getScheduledIpos();
     if (result.success && result.data.length > 0) {
       console.log(`[IPOAlerts] ✅ Scheduled fetch: ${result.data.length} IPOs`);
-      for (const ipo of result.data) {
-        await storage.upsertIpo({
-          symbol: ipo.symbol,
-          companyName: ipo.companyName,
-          priceRange: ipo.priceRange || "TBA",
-          issueSize: ipo.issueSize || "TBA",
-          status: ipo.status,
-          expectedDate: ipo.listingDate || ipo.closeDate || ipo.openDate || null,
-          lotSize: ipo.lotSize || null,
-          sector: ipo.sector || null,
-          description: ipo.description || null,
-          gmp: ipo.gmp || null,
-          subscriptionQib: ipo.subscriptionQib,
-          subscriptionHni: ipo.subscriptionHni || ipo.subscriptionNii,
-          subscriptionRetail: ipo.subscriptionRetail,
-          minInvestment: ipo.minInvestment,
-          overallScore: ipo.overallScore,
-        });
-      }
+
+      const iposToUpsert: InsertIpo[] = result.data.map(ipo => ({
+        symbol: ipo.symbol,
+        companyName: ipo.companyName,
+        priceRange: ipo.priceRange || "TBA",
+        issueSize: ipo.issueSize || "TBA",
+        status: ipo.status,
+        expectedDate: ipo.listingDate || ipo.closeDate || ipo.openDate || null,
+        lotSize: ipo.lotSize || null,
+        sector: ipo.sector || null,
+        description: ipo.description || null,
+        gmp: ipo.gmp || null,
+        subscriptionQib: ipo.subscriptionQib,
+        subscriptionHni: ipo.subscriptionHni || ipo.subscriptionNii,
+        subscriptionRetail: ipo.subscriptionRetail,
+        minInvestment: ipo.minInvestment,
+        overallScore: ipo.overallScore,
+      }));
+
+      await storage.bulkUpsertIpos(iposToUpsert);
     }
   } catch (err) {
     console.error(`[IPOAlerts] Scheduled fetch failed:`, err);
@@ -92,28 +94,24 @@ async function pollDataSources(): Promise<{
 
     if (aggregatedResults.data.length > 0) {
       console.log(`📥 Upserting ${aggregatedResults.data.length} IPOs to database...`);
-      let upsertCount = 0;
 
-      for (const ipo of aggregatedResults.data) {
-        try {
-          const savedIpo = await storage.upsertIpo({
-            symbol: ipo.symbol,
-            companyName: ipo.companyName,
-            status: ipo.status,
-            priceRange: cleanPriceRange(ipo.priceRange),
-            issueSize: ipo.issueSize,
-            lotSize: ipo.lotSize,
-            expectedDate: ipo.listingDate || ipo.closeDate || ipo.openDate || null,
-            minInvestment: (ipo.priceMin && ipo.lotSize) ? String(ipo.priceMin * ipo.lotSize) : null,
-          });
+      const iposToUpsert: InsertIpo[] = aggregatedResults.data.map(ipo => ({
+        symbol: ipo.symbol,
+        companyName: ipo.companyName,
+        status: ipo.status,
+        priceRange: cleanPriceRange(ipo.priceRange),
+        issueSize: ipo.issueSize,
+        lotSize: ipo.lotSize,
+        expectedDate: ipo.listingDate || ipo.closeDate || ipo.openDate || null,
+        minInvestment: (ipo.priceMin && ipo.lotSize) ? String(ipo.priceMin * ipo.lotSize) : null,
+      }));
 
-          // Ideally we would sync timeline events here too, but for now we ensure the main record exists
-          upsertCount++;
-        } catch (dbErr) {
-          console.error(`❌ Failed to saving ${ipo.symbol}:`, dbErr);
-        }
+      try {
+        const savedIpos = await storage.bulkUpsertIpos(iposToUpsert);
+        console.log(`✅ Successfully saved ${savedIpos.length} IPOs to DB.`);
+      } catch (err) {
+        console.error("❌ Bulk upsert failed:", err);
       }
-      console.log(`✅ Successfully saved ${upsertCount} IPOs to DB.`);
     } else {
       console.warn("⚠️ Aggregator returned 0 IPOs!");
     }
