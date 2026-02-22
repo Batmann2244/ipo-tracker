@@ -1,5 +1,9 @@
 import type { Ipo } from "@shared/schema";
 
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+const MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+
 interface AIAnalysisResult {
   summary: string;
   recommendation: string;
@@ -28,7 +32,7 @@ function getAIProvider(): { provider: AIProvider; apiKey: string; baseUrl?: stri
 
 async function callGeminiAPI(prompt: string, systemPrompt: string, apiKey: string): Promise<string> {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    `${GEMINI_API_URL}?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -54,7 +58,7 @@ async function callGeminiAPI(prompt: string, systemPrompt: string, apiKey: strin
 }
 
 async function callMistralAPI(prompt: string, systemPrompt: string, apiKey: string): Promise<string> {
-  const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+  const response = await fetch(MISTRAL_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -81,7 +85,7 @@ async function callMistralAPI(prompt: string, systemPrompt: string, apiKey: stri
 }
 
 async function callOpenAIAPI(prompt: string, systemPrompt: string, apiKey: string, baseUrl?: string): Promise<string> {
-  const url = baseUrl ? `${baseUrl}/chat/completions` : "https://api.openai.com/v1/chat/completions";
+  const url = baseUrl ? `${baseUrl}/chat/completions` : OPENAI_API_URL;
   
   const response = await fetch(url, {
     method: "POST",
