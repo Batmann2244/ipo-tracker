@@ -48,7 +48,7 @@ export interface IStorage extends IAuthStorage {
   // Watchlist
   getWatchlist(userId: string): Promise<WatchlistResponse[]>;
   addToWatchlist(userId: string, ipoId: number): Promise<WatchlistItem>;
-  removeFromWatchlist(userId: string, id: number): Promise<void>;
+  removeFromWatchlist(userId: string, watchlistId: number): Promise<void>;
   getWatchlistItem(userId: string, ipoId: number): Promise<WatchlistItem | undefined>;
 
   // Alert Preferences
@@ -295,10 +295,10 @@ export class DatabaseStorage implements IStorage {
     return item;
   }
 
-  async removeFromWatchlist(userId: string, id: number): Promise<void> {
+  async removeFromWatchlist(userId: string, watchlistId: number): Promise<void> {
     await db
       .delete(watchlist)
-      .where(and(eq(watchlist.id, id), eq(watchlist.userId, userId)));
+      .where(and(eq(watchlist.id, watchlistId), eq(watchlist.userId, userId)));
   }
 
   // Alert Preferences
