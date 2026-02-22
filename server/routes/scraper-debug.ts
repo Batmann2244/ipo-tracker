@@ -27,6 +27,9 @@ import {
   scraperAggregator,
 } from "../services/scrapers";
 import { ipoAlertsScraper } from "../services/scrapers/ipoalerts";
+import { getSourceLogger } from "../logger";
+
+const logger = getSourceLogger("scraper-debug");
 
 export function registerScraperDebugRoutes(app: Express) {
   /**
@@ -35,7 +38,7 @@ export function registerScraperDebugRoutes(app: Express) {
    */
   app.get("/api/debug/scrapers/test-all", async (req, res) => {
     try {
-      console.log("🧪 Testing all scrapers...");
+      logger.info("🧪 Testing all scrapers...");
       const startTime = Date.now();
 
       const results = await testAllScrapers();
@@ -55,10 +58,10 @@ export function registerScraperDebugRoutes(app: Express) {
         },
       };
 
-      console.log("✅ Scraper test results:", summary);
+      logger.info("✅ Scraper test results:", summary);
       res.json(summary);
     } catch (error) {
-      console.error("❌ Scraper test failed:", error);
+      logger.error("❌ Scraper test failed:", error);
       res.status(500).json({
         error: "Failed to test scrapers",
         message: error instanceof Error ? error.message : "Unknown error",
@@ -73,7 +76,7 @@ export function registerScraperDebugRoutes(app: Express) {
   app.get("/api/debug/scrapers/test/:source", async (req, res) => {
     try {
       const { source } = req.params;
-      console.log(`🧪 Testing scraper: ${source}`);
+      logger.info(`🧪 Testing scraper: ${source}`);
       const startTime = Date.now();
 
       const result = await testScraperConnection(source);
@@ -88,14 +91,14 @@ export function registerScraperDebugRoutes(app: Express) {
       };
 
       if (result.success) {
-        console.log(`✅ ${source} scraper OK (${result.responseTimeMs}ms)`);
+        logger.info(`✅ ${source} scraper OK (${result.responseTimeMs}ms)`);
       } else {
-        console.log(`❌ ${source} scraper FAILED: ${result.error}`);
+        logger.info(`❌ ${source} scraper FAILED: ${result.error}`);
       }
 
       res.json(response);
     } catch (error) {
-      console.error("❌ Test failed:", error);
+      logger.error("❌ Test failed:", error);
       res.status(500).json({
         error: "Failed to test scraper",
         message: error instanceof Error ? error.message : "Unknown error",
@@ -112,7 +115,7 @@ export function registerScraperDebugRoutes(app: Express) {
         ?.split(",")
         .map((s) => s.trim()) || ["nsetools", "groww", "chittorgarh"];
 
-      console.log(`📊 Fetching IPOs from sources:`, sources);
+      logger.info(`📊 Fetching IPOs from sources:`, sources);
       const startTime = Date.now();
 
       const result = await scraperAggregator.getIpos(sources);
@@ -143,10 +146,10 @@ export function registerScraperDebugRoutes(app: Express) {
         },
       };
 
-      console.log(`✅ Fetched ${result.data.length} IPOs in ${Date.now() - startTime}ms`);
+      logger.info(`✅ Fetched ${result.data.length} IPOs in ${Date.now() - startTime}ms`);
       res.json(response);
     } catch (error) {
-      console.error("❌ Failed to fetch IPOs:", error);
+      logger.error("❌ Failed to fetch IPOs:", error);
       res.status(500).json({
         error: "Failed to fetch IPOs",
         message: error instanceof Error ? error.message : "Unknown error",
@@ -168,7 +171,7 @@ export function registerScraperDebugRoutes(app: Express) {
           "investorgain",
         ];
 
-      console.log(`📊 Fetching subscriptions from sources:`, sources);
+      logger.info(`📊 Fetching subscriptions from sources:`, sources);
       const startTime = Date.now();
 
       const result = await scraperAggregator.getSubscriptions(sources);
@@ -193,12 +196,12 @@ export function registerScraperDebugRoutes(app: Express) {
         },
       };
 
-      console.log(
+      logger.info(
         `✅ Fetched ${result.data.length} subscription records in ${Date.now() - startTime}ms`
       );
       res.json(response);
     } catch (error) {
-      console.error("❌ Failed to fetch subscriptions:", error);
+      logger.error("❌ Failed to fetch subscriptions:", error);
       res.status(500).json({
         error: "Failed to fetch subscriptions",
         message: error instanceof Error ? error.message : "Unknown error",
@@ -215,7 +218,7 @@ export function registerScraperDebugRoutes(app: Express) {
         ?.split(",")
         .map((s) => s.trim()) || ["groww", "chittorgarh"];
 
-      console.log(`📊 Fetching GMP data from sources:`, sources);
+      logger.info(`📊 Fetching GMP data from sources:`, sources);
       const startTime = Date.now();
 
       const result = await scraperAggregator.getGmp(sources);
@@ -237,10 +240,10 @@ export function registerScraperDebugRoutes(app: Express) {
         },
       };
 
-      console.log(`✅ Fetched ${result.data.length} GMP records in ${Date.now() - startTime}ms`);
+      logger.info(`✅ Fetched ${result.data.length} GMP records in ${Date.now() - startTime}ms`);
       res.json(response);
     } catch (error) {
-      console.error("❌ Failed to fetch GMP data:", error);
+      logger.error("❌ Failed to fetch GMP data:", error);
       res.status(500).json({
         error: "Failed to fetch GMP data",
         message: error instanceof Error ? error.message : "Unknown error",
@@ -253,7 +256,7 @@ export function registerScraperDebugRoutes(app: Express) {
    */
   app.get("/api/debug/scrapers/stats", async (req, res) => {
     try {
-      console.log("📈 Generating scraper statistics...");
+      logger.info("📈 Generating scraper statistics...");
 
       const testResults = await testAllScrapers();
 
@@ -276,10 +279,10 @@ export function registerScraperDebugRoutes(app: Express) {
         },
       };
 
-      console.log("✅ Scraper statistics generated");
+      logger.info("✅ Scraper statistics generated");
       res.json(stats);
     } catch (error) {
-      console.error("❌ Failed to generate statistics:", error);
+      logger.error("❌ Failed to generate statistics:", error);
       res.status(500).json({
         error: "Failed to generate statistics",
         message: error instanceof Error ? error.message : "Unknown error",
@@ -295,7 +298,7 @@ export function registerScraperDebugRoutes(app: Express) {
   app.get("/api/debug/scrapers/source/:name/ipos", async (req, res) => {
     try {
       const { name } = req.params;
-      console.log(`📊 Fetching IPOs from source: ${name}`);
+      logger.info(`📊 Fetching IPOs from source: ${name}`);
       const startTime = Date.now();
 
       let result: any;
@@ -338,12 +341,12 @@ export function registerScraperDebugRoutes(app: Express) {
         totalTime: Date.now() - startTime,
       };
 
-      console.log(
+      logger.info(
         `✅ ${name}: ${result.data?.length || 0} IPOs (${Date.now() - startTime}ms)`
       );
       res.json(response);
     } catch (error) {
-      console.error("❌ Failed to fetch from source:", error);
+      logger.error("❌ Failed to fetch from source:", error);
       res.status(500).json({
         error: "Failed to fetch from source",
         message: error instanceof Error ? error.message : "Unknown error",
@@ -354,7 +357,7 @@ export function registerScraperDebugRoutes(app: Express) {
   app.get("/api/debug/scrapers/source/:name/subscriptions", async (req, res) => {
     try {
       const { name } = req.params;
-      console.log(`📊 Fetching subscriptions from source: ${name}`);
+      logger.info(`📊 Fetching subscriptions from source: ${name}`);
       const startTime = Date.now();
 
       let result: any;
@@ -393,12 +396,12 @@ export function registerScraperDebugRoutes(app: Express) {
         totalTime: Date.now() - startTime,
       };
 
-      console.log(
+      logger.info(
         `✅ ${name}: ${result.data?.length || 0} subscription records (${Date.now() - startTime}ms)`
       );
       res.json(response);
     } catch (error) {
-      console.error("❌ Failed to fetch from source:", error);
+      logger.error("❌ Failed to fetch from source:", error);
       res.status(500).json({
         error: "Failed to fetch from source",
         message: error instanceof Error ? error.message : "Unknown error",
@@ -412,7 +415,7 @@ export function registerScraperDebugRoutes(app: Express) {
    */
   app.get("/api/debug/scrapers/ipoalerts/test", async (req, res) => {
     try {
-      console.log("🧪 Testing IPO Alerts API...");
+      logger.info("🧪 Testing IPO Alerts API...");
       const startTime = Date.now();
 
       // Check if API key is configured
@@ -425,7 +428,7 @@ export function registerScraperDebugRoutes(app: Express) {
 
       // Get usage stats
       const usage = ipoAlertsScraper.getUsageStats();
-      console.log(`📊 IPO Alerts Usage: ${usage.used}/${usage.limit} (${usage.remaining} remaining)`);
+      logger.info(`📊 IPO Alerts Usage: ${usage.used}/${usage.limit} (${usage.remaining} remaining)`);
 
       // Test fetching open IPOs
       const result = await ipoAlertsScraper.getOpenIpos();
@@ -450,14 +453,14 @@ export function registerScraperDebugRoutes(app: Express) {
       };
 
       if (result.success) {
-        console.log(`✅ IPO Alerts API working! Found ${result.data.length} open IPOs`);
+        logger.info(`✅ IPO Alerts API working! Found ${result.data.length} open IPOs`);
       } else {
-        console.log(`❌ IPO Alerts API failed: ${result.error}`);
+        logger.info(`❌ IPO Alerts API failed: ${result.error}`);
       }
 
       res.json(response);
     } catch (error) {
-      console.error("❌ IPO Alerts test failed:", error);
+      logger.error("❌ IPO Alerts test failed:", error);
       res.status(500).json({
         error: "Failed to test IPO Alerts API",
         message: error instanceof Error ? error.message : "Unknown error"
@@ -465,5 +468,5 @@ export function registerScraperDebugRoutes(app: Express) {
     }
   });
 
-  console.log("✅ Scraper debug routes registered");
+  logger.info("✅ Scraper debug routes registered");
 }
