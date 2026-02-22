@@ -92,28 +92,20 @@ async function pollDataSources(): Promise<{
 
     if (aggregatedResults.data.length > 0) {
       console.log(`📥 Upserting ${aggregatedResults.data.length} IPOs to database...`);
-      let upsertCount = 0;
 
-      for (const ipo of aggregatedResults.data) {
-        try {
-          const savedIpo = await storage.upsertIpo({
-            symbol: ipo.symbol,
-            companyName: ipo.companyName,
-            status: ipo.status,
-            priceRange: cleanPriceRange(ipo.priceRange),
-            issueSize: ipo.issueSize,
-            lotSize: ipo.lotSize,
-            expectedDate: ipo.listingDate || ipo.closeDate || ipo.openDate || null,
-            minInvestment: (ipo.priceMin && ipo.lotSize) ? String(ipo.priceMin * ipo.lotSize) : null,
-          });
+      const iposToUpsert = aggregatedResults.data.map(ipo => ({
+        symbol: ipo.symbol,
+        companyName: ipo.companyName,
+        status: ipo.status,
+        priceRange: cleanPriceRange(ipo.priceRange),
+        issueSize: ipo.issueSize,
+        lotSize: ipo.lotSize,
+        expectedDate: ipo.listingDate || ipo.closeDate || ipo.openDate || null,
+        minInvestment: (ipo.priceMin && ipo.lotSize) ? String(ipo.priceMin * ipo.lotSize) : null,
+      }));
 
-          // Ideally we would sync timeline events here too, but for now we ensure the main record exists
-          upsertCount++;
-        } catch (dbErr) {
-          console.error(`❌ Failed to saving ${ipo.symbol}:`, dbErr);
-        }
-      }
-      console.log(`✅ Successfully saved ${upsertCount} IPOs to DB.`);
+      const savedIpos = await storage.bulkUpsertIpos(iposToUpsert);
+      console.log(`✅ Successfully saved ${savedIpos.length} IPOs to DB.`);
     } else {
       console.warn("⚠️ Aggregator returned 0 IPOs!");
     }
