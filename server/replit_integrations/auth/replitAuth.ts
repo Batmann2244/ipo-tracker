@@ -1,4 +1,5 @@
 import * as client from "openid-client";
+import { randomBytes } from "crypto";
 import { Strategy, type VerifyFunction } from "openid-client/passport";
 
 import passport from "passport";
@@ -7,6 +8,7 @@ import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import MemoryStore from "memorystore";
 import { authStorage } from "./storage";
+import { loginRateLimiter } from "../../middleware/login-rate-limiter";
 
 const getOidcConfig = memoize(
   async () => {
@@ -77,6 +79,10 @@ export async function setupAuth(app: Express) {
   
   // Skip OIDC setup if not configured (local development)
   if (!config) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("REPL_ID environment variable is not set. Authentication cannot be configured in production.");
+    }
+
     console.log("⚠️  Replit Auth not configured - running in local mode");
     
     // Setup local development mock auth
@@ -94,8 +100,8 @@ export async function setupAuth(app: Express) {
           profile_image_url: null,
           exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60 // 1 week
         },
-        access_token: "mock-access-token",
-        refresh_token: "mock-refresh-token",
+        access_token: randomBytes(32).toString("hex"),
+        refresh_token: randomBytes(32).toString("hex"),
         expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
       };
       
@@ -161,7 +167,7 @@ export async function setupAuth(app: Express) {
   passport.serializeUser((user: Express.User, cb) => cb(null, user));
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
-  app.get("/api/login", (req, res, next) => {
+  app.get("/api/login", loginRateLimiter, (req, res, next) => {
     ensureStrategy(req.hostname);
     passport.authenticate(`replitauth:${req.hostname}`, {
       prompt: "login consent",
@@ -169,7 +175,7 @@ export async function setupAuth(app: Express) {
     })(req, res, next);
   });
 
-  app.get("/api/callback", (req, res, next) => {
+  app.get("/api/callback", loginRateLimiter, (req, res, next) => {
     console.log("Callback received from hostname:", req.hostname);
     console.log("Callback query params:", req.query);
     ensureStrategy(req.hostname);
