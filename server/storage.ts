@@ -1,18 +1,8 @@
 import { db } from "./db";
 import {
-  ipos,
-  watchlist,
-  alertPreferences,
-  alertLogs,
-  gmpHistory,
-  peerCompanies,
-  subscriptionUpdates,
-  fundUtilization,
-  ipoTimeline,
   type Ipo,
   type InsertIpo,
   type WatchlistItem,
-  type InsertWatchlistItem,
   type WatchlistResponse,
   type AlertPreferences,
   type InsertAlertPreferences,
@@ -29,10 +19,29 @@ import {
   type IpoTimelineEvent,
   type InsertIpoTimeline,
 } from "@shared/schema";
-import { eq, ne, and, desc, gte, sql } from "drizzle-orm";
 import { authStorage, IAuthStorage } from "./replit_integrations/auth/storage";
 
+// Import Repositories
+import { IpoRepository, IIpoRepository } from "./repositories/ipo-repository";
+import { WatchlistRepository, IWatchlistRepository } from "./repositories/watchlist-repository";
+import { AlertRepository, IAlertRepository } from "./repositories/alert-repository";
+import { GmpRepository, IGmpRepository } from "./repositories/gmp-repository";
+import { PeerRepository, IPeerRepository } from "./repositories/peer-repository";
+import { SubscriptionRepository, ISubscriptionRepository } from "./repositories/subscription-repository";
+import { FundUtilizationRepository, IFundUtilizationRepository } from "./repositories/fund-utilization-repository";
+import { TimelineRepository, ITimelineRepository } from "./repositories/timeline-repository";
+
 export interface IStorage extends IAuthStorage {
+  // Repositories (Publicly exposed for future direct usage)
+  ipos: IIpoRepository;
+  watchlist: IWatchlistRepository;
+  alerts: IAlertRepository;
+  gmp: IGmpRepository;
+  peers: IPeerRepository;
+  subscriptions: ISubscriptionRepository;
+  funds: IFundUtilizationRepository;
+  timeline: ITimelineRepository;
+
   // IPOs
   getIpos(status?: string, sector?: string): Promise<Ipo[]>;
   getIpo(id: number): Promise<Ipo | undefined>;
@@ -90,394 +99,155 @@ export class DatabaseStorage implements IStorage {
   getUser = authStorage.getUser;
   upsertUser = authStorage.upsertUser;
 
+  // Instantiate Repositories
+  public ipos = new IpoRepository();
+  public watchlist = new WatchlistRepository();
+  public alerts = new AlertRepository();
+  public gmp = new GmpRepository();
+  public peers = new PeerRepository();
+  public subscriptions = new SubscriptionRepository();
+  public funds = new FundUtilizationRepository();
+  public timeline = new TimelineRepository();
+
   // IPOs
   async getIpos(status?: string, sector?: string): Promise<Ipo[]> {
-    let query = db.select().from(ipos);
-    const conditions = [];
-    
-    if (status) {
-      conditions.push(eq(ipos.status, status));
-    } else {
-      conditions.push(ne(ipos.status, "listed"));
-    }
-    
-    if (sector) conditions.push(eq(ipos.sector, sector));
-
-    if (conditions.length > 0) {
-      return await query.where(and(...conditions)).orderBy(desc(ipos.expectedDate));
-    }
-    return await query.orderBy(desc(ipos.expectedDate));
+    return this.ipos.getIpos(status, sector);
   }
 
   async getIpo(id: number): Promise<Ipo | undefined> {
-    const [ipo] = await db.select().from(ipos).where(eq(ipos.id, id));
-    return ipo;
+    return this.ipos.getIpo(id);
   }
 
   async getIpoBySymbol(symbol: string): Promise<Ipo | undefined> {
-    const [ipo] = await db.select().from(ipos).where(eq(ipos.symbol, symbol));
-    return ipo;
+    return this.ipos.getIpoBySymbol(symbol);
   }
 
   async createIpo(insertIpo: InsertIpo): Promise<Ipo> {
-    const [ipo] = await db.insert(ipos).values(insertIpo).returning();
-    return ipo;
+    return this.ipos.createIpo(insertIpo);
   }
 
   async upsertIpo(insertIpo: InsertIpo): Promise<Ipo> {
-    try {
-      // Try to insert with onConflictDoUpdate
-      const result = await db
-        .insert(ipos)
-        .values(insertIpo)
-        .onConflictDoUpdate({
-          target: ipos.symbol,
-          set: {
-            ...insertIpo,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
-      
-      return result[0];
-    } catch (error) {
-      // Fallback to manual check
-      const existing = await this.getIpoBySymbol(insertIpo.symbol);
-      
-      if (existing) {
-        const [updated] = await db
-          .update(ipos)
-          .set({
-            ...insertIpo,
-            updatedAt: new Date(),
-          })
-          .where(eq(ipos.id, existing.id))
-          .returning();
-        return updated;
-      }
-      
-      return this.createIpo(insertIpo);
-    }
+    return this.ipos.upsertIpo(insertIpo);
   }
 
   async bulkUpsertIpos(insertIpos: InsertIpo[]): Promise<Ipo[]> {
-    if (insertIpos.length === 0) return [];
-
-    try {
-      // Try to insert with onConflictDoUpdate for bulk
-      const result = await db
-        .insert(ipos)
-        .values(insertIpos)
-        .onConflictDoUpdate({
-          target: ipos.symbol,
-          set: {
-            companyName: sql`excluded.company_name`,
-            priceRange: sql`excluded.price_range`,
-            totalShares: sql`COALESCE(excluded.total_shares, ${ipos.totalShares})`,
-            expectedDate: sql`COALESCE(excluded.expected_date, ${ipos.expectedDate})`,
-            status: sql`excluded.status`,
-            description: sql`COALESCE(excluded.description, ${ipos.description})`,
-            sector: sql`COALESCE(excluded.sector, ${ipos.sector})`,
-            revenueGrowth: sql`COALESCE(excluded.revenue_growth, ${ipos.revenueGrowth})`,
-            ebitdaMargin: sql`COALESCE(excluded.ebitda_margin, ${ipos.ebitdaMargin})`,
-            patMargin: sql`COALESCE(excluded.pat_margin, ${ipos.patMargin})`,
-            roe: sql`COALESCE(excluded.roe, ${ipos.roe})`,
-            roce: sql`COALESCE(excluded.roce, ${ipos.roce})`,
-            debtToEquity: sql`COALESCE(excluded.debt_to_equity, ${ipos.debtToEquity})`,
-            peRatio: sql`COALESCE(excluded.pe_ratio, ${ipos.peRatio})`,
-            pbRatio: sql`COALESCE(excluded.pb_ratio, ${ipos.pbRatio})`,
-            sectorPeMedian: sql`COALESCE(excluded.sector_pe_median, ${ipos.sectorPeMedian})`,
-            issueSize: sql`COALESCE(excluded.issue_size, ${ipos.issueSize})`,
-            freshIssue: sql`COALESCE(excluded.fresh_issue, ${ipos.freshIssue})`,
-            ofsRatio: sql`COALESCE(excluded.ofs_ratio, ${ipos.ofsRatio})`,
-            lotSize: sql`COALESCE(excluded.lot_size, ${ipos.lotSize})`,
-            minInvestment: sql`COALESCE(excluded.min_investment, ${ipos.minInvestment})`,
-            gmp: sql`COALESCE(excluded.gmp, ${ipos.gmp})`,
-            subscriptionQib: sql`COALESCE(excluded.subscription_qib, ${ipos.subscriptionQib})`,
-            subscriptionHni: sql`COALESCE(excluded.subscription_hni, ${ipos.subscriptionHni})`,
-            subscriptionRetail: sql`COALESCE(excluded.subscription_retail, ${ipos.subscriptionRetail})`,
-            subscriptionNii: sql`COALESCE(excluded.subscription_nii, ${ipos.subscriptionNii})`,
-            investorGainId: sql`COALESCE(excluded.investor_gain_id, ${ipos.investorGainId})`,
-            basisOfAllotmentDate: sql`COALESCE(excluded.basis_of_allotment_date, ${ipos.basisOfAllotmentDate})`,
-            refundsInitiationDate: sql`COALESCE(excluded.refunds_initiation_date, ${ipos.refundsInitiationDate})`,
-            creditToDematDate: sql`COALESCE(excluded.credit_to_demat_date, ${ipos.creditToDematDate})`,
-            promoterHolding: sql`COALESCE(excluded.promoter_holding, ${ipos.promoterHolding})`,
-            postIpoPromoterHolding: sql`COALESCE(excluded.post_ipo_promoter_holding, ${ipos.postIpoPromoterHolding})`,
-            fundamentalsScore: sql`COALESCE(excluded.fundamentals_score, ${ipos.fundamentalsScore})`,
-            valuationScore: sql`COALESCE(excluded.valuation_score, ${ipos.valuationScore})`,
-            governanceScore: sql`COALESCE(excluded.governance_score, ${ipos.governanceScore})`,
-            overallScore: sql`COALESCE(excluded.overall_score, ${ipos.overallScore})`,
-            riskLevel: sql`COALESCE(excluded.risk_level, ${ipos.riskLevel})`,
-            redFlags: sql`COALESCE(excluded.red_flags, ${ipos.redFlags})`,
-            pros: sql`COALESCE(excluded.pros, ${ipos.pros})`,
-            aiSummary: sql`COALESCE(excluded.ai_summary, ${ipos.aiSummary})`,
-            aiRecommendation: sql`COALESCE(excluded.ai_recommendation, ${ipos.aiRecommendation})`,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
-
-      return result;
-    } catch (error) {
-      console.error("Bulk upsert failed, falling back to individual upserts:", error);
-      const results: Ipo[] = [];
-      for (const ipo of insertIpos) {
-        try {
-          results.push(await this.upsertIpo(ipo));
-        } catch (e) {
-          console.error(`Failed to upsert IPO ${ipo.symbol} individually:`, e);
-        }
-      }
-      return results;
-    }
+    return this.ipos.bulkUpsertIpos(insertIpos);
   }
 
   async updateIpo(id: number, data: Partial<InsertIpo>): Promise<Ipo | undefined> {
-    const [updated] = await db
-      .update(ipos)
-      .set({
-        ...data,
-        updatedAt: new Date(),
-      })
-      .where(eq(ipos.id, id))
-      .returning();
-    return updated;
+    return this.ipos.updateIpo(id, data);
   }
 
   async getIpoCount(): Promise<number> {
-    const result = await db.select().from(ipos);
-    return result.length;
+    return this.ipos.getIpoCount();
   }
 
   async markAllAsListed(): Promise<number> {
-    const result = await db.update(ipos).set({ status: "listed" }).returning();
-    return result.length;
+    return this.ipos.markAllAsListed();
   }
 
   async deleteIpo(id: number): Promise<void> {
-    await db.delete(ipos).where(eq(ipos.id, id));
+    return this.ipos.deleteIpo(id);
   }
 
   // Watchlist
   async getWatchlist(userId: string): Promise<WatchlistResponse[]> {
-    const items = await db
-      .select({
-        watchlist: watchlist,
-        ipo: ipos,
-      })
-      .from(watchlist)
-      .innerJoin(ipos, eq(watchlist.ipoId, ipos.id))
-      .where(eq(watchlist.userId, userId));
-
-    return items.map((item) => ({
-      ...item.watchlist,
-      ipo: item.ipo,
-    }));
+    return this.watchlist.getWatchlist(userId);
   }
 
   async getWatchlistItem(userId: string, ipoId: number): Promise<WatchlistItem | undefined> {
-    const [item] = await db
-        .select()
-        .from(watchlist)
-        .where(and(eq(watchlist.userId, userId), eq(watchlist.ipoId, ipoId)));
-    return item;
+    return this.watchlist.getWatchlistItem(userId, ipoId);
   }
 
   async addToWatchlist(userId: string, ipoId: number): Promise<WatchlistItem> {
-    // check if exists
-    const existing = await this.getWatchlistItem(userId, ipoId);
-    if (existing) return existing;
-
-    const [item] = await db
-      .insert(watchlist)
-      .values({ userId, ipoId })
-      .returning();
-    return item;
+    return this.watchlist.addToWatchlist(userId, ipoId);
   }
 
   async removeFromWatchlist(userId: string, id: number): Promise<void> {
-    await db
-      .delete(watchlist)
-      .where(and(eq(watchlist.id, id), eq(watchlist.userId, userId)));
+    return this.watchlist.removeFromWatchlist(userId, id);
   }
 
   // Alert Preferences
   async getAlertPreferences(userId: string): Promise<AlertPreferences | undefined> {
-    const [prefs] = await db
-      .select()
-      .from(alertPreferences)
-      .where(eq(alertPreferences.userId, userId));
-    return prefs;
+    return this.alerts.getAlertPreferences(userId);
   }
 
   async upsertAlertPreferences(userId: string, prefs: Partial<InsertAlertPreferences>): Promise<AlertPreferences> {
-    const existing = await this.getAlertPreferences(userId);
-    
-    if (existing) {
-      const [updated] = await db
-        .update(alertPreferences)
-        .set({
-          ...prefs,
-          updatedAt: new Date(),
-        })
-        .where(eq(alertPreferences.userId, userId))
-        .returning();
-      return updated;
-    }
-    
-    const [created] = await db
-      .insert(alertPreferences)
-      .values({ userId, ...prefs })
-      .returning();
-    return created;
+    return this.alerts.upsertAlertPreferences(userId, prefs);
   }
 
   async getAllUsersWithAlerts(): Promise<AlertPreferences[]> {
-    return await db
-      .select()
-      .from(alertPreferences)
-      .where(eq(alertPreferences.emailEnabled, true));
+    return this.alerts.getAllUsersWithAlerts();
   }
 
   // Alert Logs
   async createAlertLog(log: InsertAlertLog): Promise<AlertLog> {
-    const [created] = await db
-      .insert(alertLogs)
-      .values(log)
-      .returning();
-    return created;
+    return this.alerts.createAlertLog(log);
   }
 
   async getAlertLogs(userId?: string, limit: number = 50): Promise<AlertLog[]> {
-    let query = db.select().from(alertLogs);
-    
-    if (userId) {
-      return await query
-        .where(eq(alertLogs.userId, userId))
-        .orderBy(desc(alertLogs.createdAt))
-        .limit(limit);
-    }
-    
-    return await query
-      .orderBy(desc(alertLogs.createdAt))
-      .limit(limit);
+    return this.alerts.getAlertLogs(userId, limit);
   }
 
   // GMP History
   async addGmpHistory(entry: InsertGmpHistory): Promise<GmpHistoryEntry> {
-    const [created] = await db.insert(gmpHistory).values(entry).returning();
-    return created;
+    return this.gmp.addGmpHistory(entry);
   }
 
   async getGmpHistory(ipoId: number, days: number = 7): Promise<GmpHistoryEntry[]> {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    
-    return await db
-      .select()
-      .from(gmpHistory)
-      .where(and(
-        eq(gmpHistory.ipoId, ipoId),
-        gte(gmpHistory.recordedAt, startDate)
-      ))
-      .orderBy(desc(gmpHistory.recordedAt));
+    return this.gmp.getGmpHistory(ipoId, days);
   }
 
   // Peer Companies
   async getPeerCompanies(ipoId: number): Promise<PeerCompany[]> {
-    return await db
-      .select()
-      .from(peerCompanies)
-      .where(eq(peerCompanies.ipoId, ipoId));
+    return this.peers.getPeerCompanies(ipoId);
   }
 
   async addPeerCompany(peer: InsertPeerCompany): Promise<PeerCompany> {
-    const [created] = await db.insert(peerCompanies).values(peer).returning();
-    return created;
+    return this.peers.addPeerCompany(peer);
   }
 
   async deletePeerCompanies(ipoId: number): Promise<void> {
-    await db.delete(peerCompanies).where(eq(peerCompanies.ipoId, ipoId));
+    return this.peers.deletePeerCompanies(ipoId);
   }
 
   // Subscription Updates
   async addSubscriptionUpdate(update: InsertSubscriptionUpdate): Promise<SubscriptionUpdate> {
-    const [created] = await db.insert(subscriptionUpdates).values(update).returning();
-    return created;
+    return this.subscriptions.addSubscriptionUpdate(update);
   }
 
   async getSubscriptionUpdates(ipoId: number): Promise<SubscriptionUpdate[]> {
-    return await db
-      .select()
-      .from(subscriptionUpdates)
-      .where(eq(subscriptionUpdates.ipoId, ipoId))
-      .orderBy(desc(subscriptionUpdates.recordedAt));
+    return this.subscriptions.getSubscriptionUpdates(ipoId);
   }
 
   async getLatestSubscription(ipoId: number): Promise<SubscriptionUpdate | undefined> {
-    const [latest] = await db
-      .select()
-      .from(subscriptionUpdates)
-      .where(eq(subscriptionUpdates.ipoId, ipoId))
-      .orderBy(desc(subscriptionUpdates.recordedAt))
-      .limit(1);
-    return latest;
+    return this.subscriptions.getLatestSubscription(ipoId);
   }
 
   // Fund Utilization
   async getFundUtilization(ipoId: number): Promise<FundUtilizationEntry[]> {
-    return await db
-      .select()
-      .from(fundUtilization)
-      .where(eq(fundUtilization.ipoId, ipoId));
+    return this.funds.getFundUtilization(ipoId);
   }
 
   async addFundUtilization(entry: InsertFundUtilization): Promise<FundUtilizationEntry> {
-    const [created] = await db.insert(fundUtilization).values(entry).returning();
-    return created;
+    return this.funds.addFundUtilization(entry);
   }
 
   async updateFundUtilization(id: number, data: Partial<InsertFundUtilization>): Promise<FundUtilizationEntry | undefined> {
-    const [updated] = await db
-      .update(fundUtilization)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(fundUtilization.id, id))
-      .returning();
-    return updated;
+    return this.funds.updateFundUtilization(id, data);
   }
 
   // IPO Timeline
   async getIpoTimeline(ipoId: number): Promise<IpoTimelineEvent[]> {
-    return await db
-      .select()
-      .from(ipoTimeline)
-      .where(eq(ipoTimeline.ipoId, ipoId))
-      .orderBy(ipoTimeline.eventDate);
+    return this.timeline.getIpoTimeline(ipoId);
   }
 
   async addTimelineEvent(event: InsertIpoTimeline): Promise<IpoTimelineEvent> {
-    const [created] = await db.insert(ipoTimeline).values(event).returning();
-    return created;
+    return this.timeline.addTimelineEvent(event);
   }
 
   async getAllUpcomingEvents(days: number = 30): Promise<(IpoTimelineEvent & { ipo: Ipo })[]> {
-    const today = new Date();
-    const endDate = new Date();
-    endDate.setDate(endDate.getDate() + days);
-    
-    const events = await db
-      .select({
-        event: ipoTimeline,
-        ipo: ipos,
-      })
-      .from(ipoTimeline)
-      .innerJoin(ipos, eq(ipoTimeline.ipoId, ipos.id))
-      .where(and(
-        gte(ipoTimeline.eventDate, today.toISOString().split('T')[0])
-      ))
-      .orderBy(ipoTimeline.eventDate);
-    
-    return events.map(e => ({ ...e.event, ipo: e.ipo }));
+    return this.timeline.getAllUpcomingEvents(days);
   }
 }
 
