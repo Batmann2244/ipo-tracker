@@ -1,6 +1,6 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
-import type { InsertIpo } from "@shared/schema";
+import type { InsertIpo, InsertIpoTimeline } from "@shared/schema";
 import { calculateIpoScore } from "./scoring";
 
 /**
@@ -934,4 +934,32 @@ export function generateFundUtilization(ipoId: number): any[] {
     { ipoId, category: "Debt Repayment", percentage: 20 },
     { ipoId, category: "General Corporate", percentage: 15 },
   ];
+}
+
+export function generateTimelineEvents(ipoId: number, expectedDateStr: string | null): InsertIpoTimeline[] {
+  const baseDate = expectedDateStr
+    ? new Date(expectedDateStr)
+    : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  const events = [
+    { type: "drhp_filing", offsetDays: -30, description: "DRHP filed with SEBI" },
+    { type: "price_band", offsetDays: -2, description: "Price band announced" },
+    { type: "open_date", offsetDays: 0, description: "IPO opens for subscription" },
+    { type: "close_date", offsetDays: 3, description: "IPO closes for subscription" },
+    { type: "allotment", offsetDays: 7, description: "Share allotment finalized" },
+    { type: "refund", offsetDays: 9, description: "Refund initiated for unallotted" },
+    { type: "listing", offsetDays: 10, description: "Shares listed on exchange" },
+  ];
+
+  return events.map(event => {
+    const eventDate = new Date(baseDate);
+    eventDate.setDate(eventDate.getDate() + event.offsetDays);
+    return {
+      ipoId,
+      eventType: event.type,
+      eventDate: eventDate.toISOString().split('T')[0],
+      description: event.description,
+      isConfirmed: expectedDateStr ? event.offsetDays <= 0 : false,
+    };
+  });
 }
