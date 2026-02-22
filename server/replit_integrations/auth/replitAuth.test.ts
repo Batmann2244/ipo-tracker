@@ -48,6 +48,7 @@ describe('replitAuth - setupAuth (Local Mode)', () => {
 
   beforeEach(() => {
     vi.resetModules();
+    vi.clearAllMocks();
     process.env = { ...originalEnv };
     delete process.env.REPL_ID; // Ensure local mode
   });
@@ -67,5 +68,21 @@ describe('replitAuth - setupAuth (Local Mode)', () => {
 
     // Verify /api/login route is registered
     expect(app.get).toHaveBeenCalledWith('/api/login', expect.any(Function));
+  });
+
+  it('should THROW ERROR in production when REPL_ID is missing (Vulnerability Fix)', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.SESSION_SECRET = 'test-secret'; // Required to pass getSession check
+    delete process.env.REPL_ID;
+
+    const { setupAuth: setupAuthProd } = await import('./replitAuth');
+
+    const app = {
+      set: vi.fn(),
+      use: vi.fn(),
+      get: vi.fn(),
+    } as unknown as Express;
+
+    await expect(setupAuthProd(app)).rejects.toThrow('REPL_ID environment variable is not set');
   });
 });

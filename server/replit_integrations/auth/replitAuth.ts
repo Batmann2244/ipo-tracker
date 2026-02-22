@@ -79,6 +79,10 @@ export async function setupAuth(app: Express) {
   
   // Skip OIDC setup if not configured (local development)
   if (!config) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("REPL_ID environment variable is not set. Authentication cannot be configured in production.");
+    }
+
     console.log("⚠️  Replit Auth not configured - running in local mode");
     
     // Setup local development mock auth
