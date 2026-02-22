@@ -1,5 +1,5 @@
 import { BaseScraper, ScraperResult, IpoData, SubscriptionData, GmpData } from './base';
-import * as puppeteer from 'puppeteer';
+import * as cheerio from 'cheerio';
 
 export class BseScraper extends BaseScraper {
     constructor() {
@@ -7,247 +7,107 @@ export class BseScraper extends BaseScraper {
     }
 
     async getIpos(): Promise<ScraperResult<IpoData>> {
-        let browser: puppeteer.Browser | null = null;
         const startTime = Date.now();
 
         try {
-            this.sourceLogger.info("Starting BSE scraper with network interception");
+            this.sourceLogger.info("Starting BSE scraper with Axios + Cheerio");
 
-            const interceptedData: any[] = [];
+            const url = 'https://www.bseindia.com/markets/PublicIssues/IPOIssues_New.aspx?id=1&status=L';
 
-            browser = await puppeteer.launch({
-                headless: true,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-background-networking',
-                    '--disable-sync',
-                    '--metrics-recording-only',
-                    '--mute-audio'
-                ]
-            });
+            // Use fetchPage (Axios) instead of Puppeteer for speed and reliability
+            const html = await this.fetchPage(url);
+            const $ = cheerio.load(html);
+            const ipos: IpoData[] = [];
 
-            const page = await browser.newPage();
+            // Target table ID
+            let table = $('#ctl00_ContentPlaceHolder1_tblID');
 
-            // Set user agent
-            await page.setUserAgent(
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            );
-
-            // CRITICAL FIX 1: Set up request interception FIRST (before any navigation)
-            await page.setRequestInterception(true);
-
-            page.on('request', (req: puppeteer.HTTPRequest) => {
-                const resourceType = req.resourceType();
-                // Block images, media, fonts, stylesheets for speed
-                if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
-                    req.abort();
-                } else {
-                    req.continue();
-                }
-            });
-
-            // CRITICAL FIX 2: Set up response listener AFTER request interception
-            page.on('response', async (response) => {
-                const url = response.url();
-                const status = response.status();
-
-                // Log all responses for debugging
-                this.sourceLogger.debug(`Response: ${url} - Status: ${status}`);
-
-                // Intercept BSE API calls
-                if (
-                    url.includes('GetPipoData') ||
-                    url.includes('IPOIssues') ||
-                    url.includes('PublicIssueData') ||
-                    url.includes('/api/') ||
-                    url.includes('GetData')
-                ) {
-                    try {
-                        const contentType = response.headers()['content-type'] || '';
-
-                        this.sourceLogger.info(`📡 Intercepted BSE endpoint: ${url}`, {
-                            status,
-                            contentType
-                        });
-
-                        // FIX: Attempt to parse JSON for API URLs even if content-type is wrong
-                        let isJson = contentType.includes('application/json');
-                        if (!isJson && (url.includes('GetPipoData') || url.includes('/api/') || url.includes('GetData'))) {
-                            isJson = true;
-                        }
-
-                        if (isJson || true) { // Force try parse for all matched URLs
-                            try {
-                                const data = await response.json();
-                                this.sourceLogger.info('JSON data received', {
-                                    dataType: typeof data,
-                                    isArray: Array.isArray(data),
-                                    keys: Object.keys(data || {})
-                                });
-
-                                // Handle different response structures
-                                if (Array.isArray(data)) {
-                                    interceptedData.push(...data);
-                                } else if (data.Table) {
-                                    // ASP.NET DataTable format
-                                    interceptedData.push(...(Array.isArray(data.Table) ? data.Table : [data.Table]));
-                                } else if (data.d) {
-                                    // ASP.NET WebMethod format
-                                    const parsed = typeof data.d === 'string' ? JSON.parse(data.d) : data.d;
-                                    if (Array.isArray(parsed)) {
-                                        interceptedData.push(...parsed);
-                                    } else if (parsed.Table) {
-                                        interceptedData.push(...(Array.isArray(parsed.Table) ? parsed.Table : [parsed.Table]));
-                                    }
-                                } else if (data.data || data.result || data.ipos) {
-                                    const arr = data.data || data.result || data.ipos;
-                                    if (Array.isArray(arr)) {
-                                        interceptedData.push(...arr);
-                                    }
-                                } else {
-                                    // Log unexpected structure
-                                    this.sourceLogger.warn('Unexpected JSON structure', { data });
-                                }
-                            } catch (parseError) {
-                                // Ignore parse errors for non-JSON
-                            }
-                        }
-                    } catch (e: any) {
-                        this.sourceLogger.debug('Response parse error', { error: e.message });
-                    }
-                }
-            });
-
-            // Navigate to BSE IPO page
-            const url = 'https://www.bseindia.com/markets/PublicIssues/IPOIssues_New.aspx';
-
-            try {
-                this.sourceLogger.info(`Navigating to ${url}`);
-                await page.goto(url, {
-                    waitUntil: 'networkidle2',
-                    timeout: 60000
-                });
-
-                // Wait additional time for AJAX to complete
-                this.sourceLogger.info('Waiting for AJAX calls to complete...');
-                await new Promise(resolve => setTimeout(resolve, 5000));
-
-            } catch (navError: any) {
-                this.sourceLogger.warn(`Navigation timeout (continuing): ${navError.message}`);
+            // Fallback
+            if (!table.length) {
+                // Find any table with enough rows
+                const tables = $('table');
+                table = tables.filter((_, t) => $(t).find('tr').length > 5).first();
             }
 
-            // CRITICAL FIX 3: Improved DOM fallback
-            if (interceptedData.length === 0) {
-                this.sourceLogger.warn('No API data intercepted, attempting DOM extraction');
+            if (table.length) {
+                const rows = table.find('tr');
 
-                const domData = await page.evaluate(() => {
-                    const results: any[] = [];
+                rows.each((index, row) => {
+                    if (index === 0) return; // Skip header
 
-                    // Try specific BSE table ID first
-                    let targetTable = document.querySelector('#ContentPlaceHolder1_gvIPO');
+                    const cells = $(row).find('td');
+                    if (cells.length < 7) return;
 
-                    // Fallback to any table with data
-                    if (!targetTable) {
-                        const tables = Array.from(document.querySelectorAll('table'));
-                        targetTable = tables.find(t => {
-                            const rows = t.querySelectorAll('tr');
-                            return rows.length > 1; // Has header + data
-                        }) || null;
-                    }
+                    // Helper to get text
+                    const getText = (idx: number) => $(cells[idx]).text().trim();
 
-                    if (targetTable) {
-                        const rows = targetTable.querySelectorAll('tr');
+                    const name = getText(0);
+                    if (name.toLowerCase().includes('no records') || name.length < 2) return;
 
-                        // Skip first row (header)
-                        for (let i = 1; i < rows.length; i++) {
-                            const cells = rows[i].querySelectorAll('td');
+                    const platform = getText(1);
+                    const startDate = getText(2);
+                    const endDate = getText(3);
+                    const price = getText(4);
+                    const faceValue = getText(5);
+                    const type = getText(6);
+                    const statusText = getText(7);
 
-                            if (cells.length >= 4) {
-                                // Extract text from cells
-                                const cellTexts = Array.from(cells).map(c => c.textContent?.trim() || '');
-
-                                // Look for company name (usually in column 1 or 2)
-                                const nameCell = cellTexts.find(text =>
-                                    text &&
-                                    text.length > 3 &&
-                                    !text.match(/^\d+$/) && // Not just numbers
-                                    !text.toLowerCase().includes('no records')
-                                );
-
-                                if (nameCell) {
-                                    results.push({
-                                        Scrip_Name: nameCell,
-                                        Scrip_cd: cellTexts[0] || '',
-                                        Status: 'L', // Listed
-                                        Price_Band: cellTexts[3] || 'TBA',
-                                        Market_Lot: cellTexts[4] || '1',
-                                        Start_Dt: cellTexts[5] || new Date().toISOString(),
-                                        End_Dt: cellTexts[6] || new Date().toISOString(),
-                                        eXCHANGE_PLATFORM: 'MAIN'
-                                    });
-                                }
-                            }
+                    // Parse dates DD-MM-YYYY
+                    const parseDate = (d: string) => {
+                        if (!d) return null;
+                        const parts = d.split(/[-/]/);
+                        if (parts.length === 3) {
+                            return `${parts[2]}-${parts[1]}-${parts[0]}`;
                         }
-                    }
+                        return null;
+                    };
 
-                    return results;
-                });
-
-                if (domData.length > 0) {
-                    this.sourceLogger.info(`DOM extraction found ${domData.length} records`);
-                    interceptedData.push(...domData);
-                } else {
-                    this.sourceLogger.error('DOM extraction also returned 0 records');
-                }
-            }
-
-            await browser.close();
-            browser = null;
-
-            // Transform to IpoData
-            const ipos: IpoData[] = interceptedData
-                .filter(item => {
-                    const name = item.Scrip_Name || item.SecurityName || item.Name;
-                    return name && name.trim().length > 0;
-                })
-                .map(item => {
-                    const companyName = item.Scrip_Name || item.SecurityName || item.Name || 'Unknown';
-                    const openDate = item.Start_Dt ? item.Start_Dt.split('T')[0] : null;
-                    const closeDate = item.End_Dt ? item.End_Dt.split('T')[0] : null;
+                    const openDate = parseDate(startDate);
+                    const closeDate = parseDate(endDate);
 
                     let status: 'open' | 'upcoming' | 'closed' = 'closed';
-                    if (item.Status === 'L' || item.Status === 'C') {
+                    const statusLower = statusText.toLowerCase();
+
+                    if (statusLower.includes('live') || statusLower.includes('open')) {
                         status = 'open';
-                    } else if (item.Status === 'F') {
+                    } else if (statusLower.includes('forthcoming') || statusLower.includes('upcoming')) {
                         status = 'upcoming';
+                    } else {
+                        const now = new Date();
+                        if (closeDate && new Date(closeDate) < now) {
+                            status = 'closed';
+                        } else if (openDate && new Date(openDate) > now) {
+                            status = 'upcoming';
+                        } else {
+                            status = 'open';
+                        }
                     }
 
-                    return {
-                        symbol: item.Scrip_cd ? String(item.Scrip_cd) : this.generateSymbol(companyName),
-                        companyName,
+                    ipos.push({
+                        symbol: this.generateSymbol(name),
+                        companyName: name,
                         status,
-                        priceRange: item.Price_Band || 'TBA',
+                        priceRange: price || 'TBA',
                         issueSize: 'TBA',
                         issueSizeCrores: null,
                         priceMin: null,
                         priceMax: null,
-                        lotSize: item.Market_Lot ? parseInt(item.Market_Lot) : null,
+                        lotSize: null,
                         listingDate: null,
-                        ipoType: item.eXCHANGE_PLATFORM === 'SME' ? 'sme' : 'mainboard',
+                        ipoType: platform.toLowerCase().includes('sme') ? 'sme' : 'mainboard',
                         openDate,
                         closeDate,
-                    };
+                    });
                 });
+            } else {
+                this.sourceLogger.error('BSE scraper: Table not found in HTML');
+            }
 
             this.sourceLogger.info(`BSE scraper completed: ${ipos.length} IPOs extracted`);
             return this.wrapResult(ipos, startTime);
 
         } catch (error: any) {
             this.sourceLogger.error('BSE scraper error', { error: error.message, stack: error.stack });
-            if (browser) await browser.close();
             return this.handleError(error);
         }
     }

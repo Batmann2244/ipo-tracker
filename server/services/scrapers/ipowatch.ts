@@ -6,11 +6,13 @@ export class IpoWatchScraper extends BaseScraper {
         super('ipowatch');
     }
 
-    async getIpos(): Promise<ScraperResult<IpoData>> { // Changed return type to IpoData to match usage
+    async getIpos(): Promise<ScraperResult<IpoData>> {
         try {
             // IPO Watch GMP Page
             const url = 'https://ipowatch.in/ipo-grey-market-premium-latest-ipo-gmp/';
-            const content = await this.fetchWithPuppeteer(url);
+
+            // Use fetchPage (Axios) instead of Puppeteer for speed and reliability
+            const content = await this.fetchPage(url);
             const $ = cheerio.load(content);
             const ipos: IpoData[] = [];
 
@@ -75,15 +77,11 @@ export class IpoWatchScraper extends BaseScraper {
         }
     }
 
-    async getSubscriptions(): Promise<ScraperResult<SubscriptionData>> { // Changed return type to SubscriptionData
+    async getSubscriptions(): Promise<ScraperResult<SubscriptionData>> {
         return this.wrapSubscriptionResult([], Date.now());
     }
 
-    async getGmp(): Promise<ScraperResult<GmpData>> { // Changed return type to GmpData
-        // We can reuse getIpos logic or extract just GMP here.
-        // For now, let's just return empty as Aggregator might merge from getIpos 
-        // OR we should ideally return GMP data structure.
-        // Let's implement it properly to return GMP data
+    async getGmp(): Promise<ScraperResult<GmpData>> {
         try {
             const result = await this.getIpos();
             if (!result.success) return this.wrapGmpResult([], Date.now(), result.error);
