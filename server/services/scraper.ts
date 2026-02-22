@@ -32,6 +32,15 @@ const GROWW_IPO = "https://groww.in/ipo";
 const GROWW_API = "https://groww.in/v1/api/stocks_ipo/v1/ipo";
 const INVESTORGAIN_LIVE = "https://www.investorgain.com/report/ipo-subscription-live/333/all/";
 
+// Regex constants for performance
+const DATE_CLEAN_REGEX = /\s+/g;
+const DATE_MATCH_REGEX = /(\d{1,2})\s*([a-zA-Z]+)\s*,?\s*(\d{4})/;
+const DATE_SIMPLE_REGEX = /(\d{4})-(\d{2})-(\d{2})/;
+const DATE_DDMMYYYY_REGEX = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/;
+const PRICE_MATCH_REGEX = /[\d,]+/g;
+const ISSUE_SIZE_MATCH_REGEX = /([\d,.]+)\s*(cr|crore)?/i;
+const COMMA_REGEX = /,/g;
+
 interface RawIpoData {
   symbol: string;
   companyName: string;
@@ -75,11 +84,11 @@ async function fetchPage(url: string): Promise<string> {
   }
 }
 
-function parseDate(dateStr: string): string | null {
+export function parseDate(dateStr: string): string | null {
   if (!dateStr || dateStr.toLowerCase() === "tba" || dateStr === "-") return null;
   
   try {
-    const cleaned = dateStr.trim().replace(/\s+/g, " ");
+    const cleaned = dateStr.trim().replace(DATE_CLEAN_REGEX, " ");
     const months: { [key: string]: string } = {
       jan: "01", january: "01",
       feb: "02", february: "02",
@@ -95,7 +104,7 @@ function parseDate(dateStr: string): string | null {
       dec: "12", december: "12",
     };
     
-    const match = cleaned.match(/(\d{1,2})\s*([a-zA-Z]+)\s*,?\s*(\d{4})/);
+    const match = cleaned.match(DATE_MATCH_REGEX);
     if (match) {
       const day = match[1].padStart(2, "0");
       const monthKey = match[2].toLowerCase();
@@ -107,12 +116,12 @@ function parseDate(dateStr: string): string | null {
       }
     }
     
-    const simpleMatch = cleaned.match(/(\d{4})-(\d{2})-(\d{2})/);
+    const simpleMatch = cleaned.match(DATE_SIMPLE_REGEX);
     if (simpleMatch) {
       return cleaned;
     }
     
-    const ddmmyyyy = cleaned.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    const ddmmyyyy = cleaned.match(DATE_DDMMYYYY_REGEX);
     if (ddmmyyyy) {
       const day = ddmmyyyy[1].padStart(2, "0");
       const month = ddmmyyyy[2].padStart(2, "0");
@@ -126,11 +135,11 @@ function parseDate(dateStr: string): string | null {
   return null;
 }
 
-function determineStatus(openDate: string | null, closeDate: string | null): "upcoming" | "open" | "closed" {
+export function determineStatus(openDate: string | null, closeDate: string | null, referenceDate?: Date): "upcoming" | "open" | "closed" {
   if (!openDate) return "upcoming";
   
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = referenceDate || new Date();
+  if (!referenceDate) today.setHours(0, 0, 0, 0);
   
   const open = new Date(openDate);
   const close = closeDate ? new Date(closeDate) : null;
@@ -764,7 +773,7 @@ export async function scrapeMainboardIPOs(): Promise<RawIpoData[]> {
   return mergedIpos;
 }
 
-function generateSector(companyName: string): string {
+export function generateSector(companyName: string): string {
   const name = companyName.toLowerCase();
   
   if (name.includes("pharma") || name.includes("drug") || name.includes("health") || name.includes("med") || name.includes("care")) {
@@ -813,25 +822,31 @@ export async function scrapeAndTransformIPOs(): Promise<InsertIpo[]> {
   
   const transformedIpos: InsertIpo[] = [];
   
+  // Create today date once for the loop
+  const today = new Date();
+  // Store current UTC date string before mutating for local midnight comparison
+  const fallbackDateStr = today.toISOString().split("T")[0];
+  today.setHours(0, 0, 0, 0);
+
   for (const raw of rawIpos) {
     const gmp = gmpMap.get(raw.symbol);
     
     const openDate = parseDate(raw.openDate);
     const closeDate = parseDate(raw.closeDate);
-    const status = determineStatus(openDate, closeDate);
+    const status = determineStatus(openDate, closeDate, today);
     
     if (status === "closed") continue;
     
-    const priceMatch = raw.priceRange.match(/[\d,]+/g);
+    const priceMatch = raw.priceRange.match(PRICE_MATCH_REGEX);
     let priceMin = 0;
     let priceMax = 0;
     if (priceMatch && priceMatch.length >= 1) {
-      priceMin = parseFloat(priceMatch[0].replace(/,/g, ""));
-      priceMax = priceMatch.length >= 2 ? parseFloat(priceMatch[1].replace(/,/g, "")) : priceMin;
+      priceMin = parseFloat(priceMatch[0].replace(COMMA_REGEX, ""));
+      priceMax = priceMatch.length >= 2 ? parseFloat(priceMatch[1].replace(COMMA_REGEX, "")) : priceMin;
     }
     
-    const issueMatch = raw.issueSize?.match(/([\d,.]+)\s*(cr|crore)?/i);
-    const issueSize = issueMatch ? parseFloat(issueMatch[1].replace(/,/g, "")) : 0;
+    const issueMatch = raw.issueSize?.match(ISSUE_SIZE_MATCH_REGEX);
+    const issueSize = issueMatch ? parseFloat(issueMatch[1].replace(COMMA_REGEX, "")) : 0;
     
     const sector = generateSector(raw.companyName);
     
@@ -845,7 +860,7 @@ export async function scrapeAndTransformIPOs(): Promise<InsertIpo[]> {
       priceRange: priceRangeStr,
       sector,
       status,
-      expectedDate: openDate || closeDate || new Date().toISOString().split("T")[0],
+      expectedDate: openDate || closeDate || fallbackDateStr,
       lotSize: raw.lotSize || 1,
       issueSize: issueSize > 0 ? `${issueSize} Cr` : "TBA",
       gmp: gmp?.gmp || 0,
