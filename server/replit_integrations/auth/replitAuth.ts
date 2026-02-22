@@ -7,6 +7,7 @@ import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import MemoryStore from "memorystore";
 import { authStorage } from "./storage";
+import { loginRateLimiter } from "../../middleware/login-rate-limiter";
 
 const getOidcConfig = memoize(
   async () => {
@@ -161,7 +162,7 @@ export async function setupAuth(app: Express) {
   passport.serializeUser((user: Express.User, cb) => cb(null, user));
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
-  app.get("/api/login", (req, res, next) => {
+  app.get("/api/login", loginRateLimiter, (req, res, next) => {
     ensureStrategy(req.hostname);
     passport.authenticate(`replitauth:${req.hostname}`, {
       prompt: "login consent",
@@ -169,7 +170,7 @@ export async function setupAuth(app: Express) {
     })(req, res, next);
   });
 
-  app.get("/api/callback", (req, res, next) => {
+  app.get("/api/callback", loginRateLimiter, (req, res, next) => {
     console.log("Callback received from hostname:", req.hostname);
     console.log("Callback query params:", req.query);
     ensureStrategy(req.hostname);
