@@ -9,6 +9,14 @@ interface AIAnalysisResult {
 
 type AIProvider = "gemini" | "mistral" | "openai";
 
+interface LLMRequestConfig {
+  url: string;
+  headers: Record<string, string>;
+  body: any;
+  extractContent: (data: any) => string;
+  errorMessagePrefix: string;
+}
+
 function getAIProvider(): { provider: AIProvider; apiKey: string; baseUrl?: string } | null {
   if (process.env.GEMINI_API_KEY) {
     return { provider: "gemini", apiKey: process.env.GEMINI_API_KEY };
@@ -26,41 +34,32 @@ function getAIProvider(): { provider: AIProvider; apiKey: string; baseUrl?: stri
   return null;
 }
 
-async function callGeminiAPI(prompt: string, systemPrompt: string, apiKey: string): Promise<string> {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: `${systemPrompt}\n\n${prompt}` }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 800,
-        }
-      })
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini API error: ${error}`);
-  }
-
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+function getGeminiConfig(apiKey: string, prompt: string, systemPrompt: string): LLMRequestConfig {
+  return {
+    url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    headers: { "Content-Type": "application/json" },
+    body: {
+      contents: [{
+        parts: [{ text: `${systemPrompt}\n\n${prompt}` }]
+      }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 800,
+      }
+    },
+    extractContent: (data: any) => data.candidates?.[0]?.content?.parts?.[0]?.text || "",
+    errorMessagePrefix: "Gemini API error"
+  };
 }
 
-async function callMistralAPI(prompt: string, systemPrompt: string, apiKey: string): Promise<string> {
-  const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
-    method: "POST",
+function getMistralConfig(apiKey: string, prompt: string, systemPrompt: string): LLMRequestConfig {
+  return {
+    url: "https://api.mistral.ai/v1/chat/completions",
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`
     },
-    body: JSON.stringify({
+    body: {
       model: "mistral-small-latest",
       messages: [
         { role: "system", content: systemPrompt },
@@ -68,28 +67,22 @@ async function callMistralAPI(prompt: string, systemPrompt: string, apiKey: stri
       ],
       temperature: 0.7,
       max_tokens: 800,
-    })
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Mistral API error: ${error}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || "";
+    },
+    extractContent: (data: any) => data.choices?.[0]?.message?.content || "",
+    errorMessagePrefix: "Mistral API error"
+  };
 }
 
-async function callOpenAIAPI(prompt: string, systemPrompt: string, apiKey: string, baseUrl?: string): Promise<string> {
+function getOpenAIConfig(apiKey: string, prompt: string, systemPrompt: string, baseUrl?: string): LLMRequestConfig {
   const url = baseUrl ? `${baseUrl}/chat/completions` : "https://api.openai.com/v1/chat/completions";
   
-  const response = await fetch(url, {
-    method: "POST",
+  return {
+    url,
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`
     },
-    body: JSON.stringify({
+    body: {
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
@@ -97,22 +90,32 @@ async function callOpenAIAPI(prompt: string, systemPrompt: string, apiKey: strin
       ],
       temperature: 0.7,
       max_tokens: 800,
-    })
+    },
+    extractContent: (data: any) => data.choices?.[0]?.message?.content || "",
+    errorMessagePrefix: "OpenAI API error"
+  };
+}
+
+async function callLLM(config: LLMRequestConfig): Promise<string> {
+  const response = await fetch(config.url, {
+    method: "POST",
+    headers: config.headers,
+    body: JSON.stringify(config.body)
   });
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`OpenAI API error: ${error}`);
+    throw new Error(`${config.errorMessagePrefix}: ${error}`);
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content || "";
+  return config.extractContent(data);
 }
 
 export async function analyzeIpo(ipo: Ipo): Promise<AIAnalysisResult> {
-  const config = getAIProvider();
+  const providerConfig = getAIProvider();
   
-  if (!config) {
+  if (!providerConfig) {
     return {
       summary: "AI analysis requires an API key. Add GEMINI_API_KEY, MISTRAL_API_KEY, or configure OpenAI to enable this feature.",
       recommendation: "Unable to generate recommendation without API key.",
@@ -131,21 +134,24 @@ Keep responses concise but informative.`;
   
   try {
     let content: string;
+    let config: LLMRequestConfig;
     
-    switch (config.provider) {
+    switch (providerConfig.provider) {
       case "gemini":
         console.log("Using Gemini for AI analysis");
-        content = await callGeminiAPI(prompt, systemPrompt, config.apiKey);
+        config = getGeminiConfig(providerConfig.apiKey, prompt, systemPrompt);
         break;
       case "mistral":
         console.log("Using Mistral for AI analysis");
-        content = await callMistralAPI(prompt, systemPrompt, config.apiKey);
+        config = getMistralConfig(providerConfig.apiKey, prompt, systemPrompt);
         break;
       case "openai":
         console.log("Using OpenAI for AI analysis");
-        content = await callOpenAIAPI(prompt, systemPrompt, config.apiKey, config.baseUrl);
+        config = getOpenAIConfig(providerConfig.apiKey, prompt, systemPrompt, providerConfig.baseUrl);
         break;
     }
+
+    content = await callLLM(config);
 
     return parseAnalysisResponse(content, ipo);
   } catch (error) {
@@ -157,6 +163,20 @@ Keep responses concise but informative.`;
       keyInsights: [],
     };
   }
+}
+
+function parseJsonArray(value: string | null | undefined | unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 function buildAnalysisPrompt(ipo: Ipo): string {
@@ -178,8 +198,11 @@ function buildAnalysisPrompt(ipo: Ipo): string {
   if (ipo.promoterHolding) metrics.push(`Promoter Holding: ${ipo.promoterHolding}%`);
   if (ipo.gmp) metrics.push(`Grey Market Premium: ₹${ipo.gmp}`);
   
-  const redFlags = ipo.redFlags?.length ? `\nRed Flags: ${ipo.redFlags.join(", ")}` : "";
-  const pros = ipo.pros?.length ? `\nPositives: ${ipo.pros.join(", ")}` : "";
+  const redFlagsList = parseJsonArray(ipo.redFlags);
+  const prosList = parseJsonArray(ipo.pros);
+
+  const redFlags = redFlagsList.length ? `\nRed Flags: ${redFlagsList.join(", ")}` : "";
+  const pros = prosList.length ? `\nPositives: ${prosList.join(", ")}` : "";
   
   return `Analyze this IPO for Indian market investors:
 
