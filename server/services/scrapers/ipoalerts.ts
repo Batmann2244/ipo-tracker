@@ -1,6 +1,7 @@
 import { IpoData, ScraperResult, normalizeSymbol } from "./base";
 import { scraperLogger } from "../scraper-logger";
 import { getSourceLogger } from "../../logger";
+import pLimit from "p-limit";
 
 const API_BASE = "https://api.ipoalerts.in";
 const API_KEY = process.env.IPOALERTS_API_KEY;
@@ -262,7 +263,8 @@ async function getIposByStatus(
     let page = 1;
     let totalPages = 1;
 
-    while (page <= totalPages && canMakeRequest()) {
+    // Fetch first page to get metadata
+    if (page <= totalPages && canMakeRequest()) {
       const response = await fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}&page=${page}`) as IpoAlertsResponse;
 
       // Update pagination info
@@ -282,6 +284,48 @@ async function getIposByStatus(
       // Collect IPOs
       allIpos.push(...response.ipos.map(parseIpoData));
       page++;
+    }
+
+    // Fetch remaining pages in parallel if needed and allowed
+    if (page <= totalPages) {
+      const remainingRequests = getRemainingRequests();
+      const pagesNeeded = totalPages - page + 1;
+      const pagesToFetchCount = Math.min(pagesNeeded, remainingRequests);
+
+      if (pagesToFetchCount > 0) {
+        sourceLogger.info("IPOAlerts fetching remaining pages in parallel", {
+          pagesStartingFrom: page,
+          count: pagesToFetchCount,
+          totalPages
+        });
+
+        const pageNumbers = Array.from({ length: pagesToFetchCount }, (_, i) => page + i);
+        const limit = pLimit(5); // Limit concurrency to 5 requests
+
+        const responses = await Promise.all(
+          pageNumbers.map(p => limit(() => fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}&page=${p}`)))
+        );
+
+        responses.forEach((response: any, index) => {
+          const currentPage = pageNumbers[index];
+          const typedResponse = response as IpoAlertsResponse;
+
+          sourceLogger.info("IPOAlerts page received", {
+            status,
+            page: currentPage,
+            totalPages,
+            ipos: typedResponse.ipos.length,
+            count: typedResponse.meta?.count,
+            countOnPage: typedResponse.meta?.countOnPage,
+            limit: typedResponse.meta?.limit,
+            info: typedResponse.meta?.info,
+          });
+
+          allIpos.push(...typedResponse.ipos.map(parseIpoData));
+        });
+
+        page += pagesToFetchCount;
+      }
     }
 
     if (isScheduled && (status === 'open' || status === 'upcoming' || status === 'listed')) {
