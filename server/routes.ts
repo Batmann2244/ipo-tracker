@@ -6,8 +6,7 @@ import { api } from "@shared/routes";
 import { insertIpoSchema, insertAlertPreferencesSchema, TIER_LIMITS } from "@shared/schema";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { z } from "zod";
-import { calculateIpoScore } from "./services/scoring";
-import { scrapeAndTransformIPOs, testScraper, generatePeerCompanies, generateGmpHistory, generateFundUtilization } from "./services/scraper";
+import { scrapeAndTransformIPOs, testScraper } from "./services/scraper";
 import { analyzeIpo } from "./services/ai-analysis";
 import { sendIpoEmailAlert } from "./services/email";
 import {
@@ -39,6 +38,7 @@ import {
 } from "./services/api-key-service";
 import { scraperLogger } from "./services/scraper-logger";
 import { investorGainScraper } from "./services/scrapers/investorgain";
+import { syncIpos } from "./services/sync-service";
 
 export async function registerRoutes(
   httpServer: Server, // Accept httpServer as parameter
@@ -391,118 +391,8 @@ export async function registerRoutes(
 
   app.post("/api/admin/sync", requireAuth, async (req, res) => {
     try {
-      console.log("🔄 Starting IPO data sync from multiple sources...");
-
-      const scrapedIpos = await scrapeAndTransformIPOs();
-
-      console.log("🔄 Fetching InvestorGain data for GMP and IDs...");
-      const igResult = await investorGainScraper.getIpos();
-      const igIpos = igResult.success ? igResult.data : [];
-      console.log(`📊 InvestorGain returned ${igIpos.length} IPOs`);
-
-      const igMap = new Map<string, typeof igIpos[0]>();
-      for (const igIpo of igIpos) {
-        const normalizedName = igIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
-        igMap.set(normalizedName, igIpo);
-        igMap.set(igIpo.symbol.toLowerCase(), igIpo);
-      }
-
-      let created = 0;
-      let updated = 0;
-      let analyticsAdded = 0;
-
-      for (const ipo of scrapedIpos) {
-        const normalizedName = ipo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
-        const igMatch = igMap.get(normalizedName) || igMap.get(ipo.symbol.toLowerCase());
-
-        if (igMatch) {
-          ipo.investorGainId = igMatch.investorGainId ?? null;
-          ipo.gmp = igMatch.gmp ?? ipo.gmp;
-          ipo.basisOfAllotmentDate = igMatch.basisOfAllotmentDate ?? ipo.basisOfAllotmentDate;
-        }
-        const existing = await storage.getIpoBySymbol(ipo.symbol);
-        const savedIpo = await storage.upsertIpo(ipo);
-
-        if (existing) {
-          updated++;
-        } else {
-          created++;
-        }
-
-        // Generate analytics data for each IPO
-        const ipoId = savedIpo.id;
-        const sector = savedIpo.sector || "Industrial";
-
-        // Check if analytics data exists, if not generate it
-        const existingPeers = await storage.getPeerCompanies(ipoId);
-        if (existingPeers.length === 0) {
-          const peers = generatePeerCompanies(ipoId, sector);
-          for (const peer of peers) {
-            await storage.addPeerCompany(peer);
-          }
-          analyticsAdded++;
-        }
-
-        // Add GMP history entry
-        if (savedIpo.gmp !== null) {
-          await storage.addGmpHistory({
-            ipoId,
-            gmp: savedIpo.gmp,
-            gmpPercentage: savedIpo.gmp * 0.8, // Approximate percentage
-          });
-        }
-
-        // Generate fund utilization if not exists
-        const existingFunds = await storage.getFundUtilization(ipoId);
-        if (existingFunds.length === 0) {
-          const funds = generateFundUtilization(ipoId);
-          for (const fund of funds) {
-            await storage.addFundUtilization(fund);
-          }
-        }
-
-        // Generate timeline events for all IPOs
-        const existingTimeline = await storage.getIpoTimeline(ipoId);
-        if (existingTimeline.length === 0) {
-          // Use expected date if available, otherwise use a future date (30 days from now)
-          const baseDate = savedIpo.expectedDate
-            ? new Date(savedIpo.expectedDate)
-            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-          const events = [
-            { type: "drhp_filing", offsetDays: -30, description: "DRHP filed with SEBI" },
-            { type: "price_band", offsetDays: -2, description: "Price band announced" },
-            { type: "open_date", offsetDays: 0, description: "IPO opens for subscription" },
-            { type: "close_date", offsetDays: 3, description: "IPO closes for subscription" },
-            { type: "allotment", offsetDays: 7, description: "Share allotment finalized" },
-            { type: "refund", offsetDays: 9, description: "Refund initiated for unallotted" },
-            { type: "listing", offsetDays: 10, description: "Shares listed on exchange" },
-          ];
-
-          for (const event of events) {
-            const eventDate = new Date(baseDate);
-            eventDate.setDate(eventDate.getDate() + event.offsetDays);
-            await storage.addTimelineEvent({
-              ipoId,
-              eventType: event.type,
-              eventDate: eventDate.toISOString().split('T')[0],
-              description: event.description,
-              isConfirmed: savedIpo.expectedDate ? event.offsetDays <= 0 : false,
-            });
-          }
-        }
-      }
-
-      console.log(`✅ Sync complete: ${created} created, ${updated} updated, ${analyticsAdded} analytics generated`);
-
-      res.json({
-        success: true,
-        message: `Synced ${scrapedIpos.length} IPOs with analytics data`,
-        created,
-        updated,
-        analyticsAdded,
-        total: scrapedIpos.length,
-      });
+      const result = await syncIpos();
+      res.json(result);
     } catch (error) {
       console.error("Sync failed:", error);
       res.status(500).json({
@@ -1058,69 +948,8 @@ async function autoSyncOnStartup() {
   const existingIpos = await storage.getIpos();
   if (existingIpos.length === 0) {
     console.log("Database empty - attempting to fetch real IPO data from Chittorgarh...");
-
     try {
-      const scrapedIpos = await scrapeAndTransformIPOs();
-
-      if (scrapedIpos.length > 0) {
-        for (const ipo of scrapedIpos) {
-          const savedIpo = await storage.createIpo(ipo);
-
-          // Generate analytics data
-          const ipoId = savedIpo.id;
-          const sector = savedIpo.sector || "Industrial";
-
-          // Generate peer companies
-          const peers = generatePeerCompanies(ipoId, sector);
-          for (const peer of peers) {
-            await storage.addPeerCompany(peer);
-          }
-
-          // Generate GMP history (7 days of sample data)
-          if (savedIpo.gmp !== null) {
-            const gmpHistoryData = generateGmpHistory(ipoId);
-            for (const entry of gmpHistoryData) {
-              await storage.addGmpHistory(entry);
-            }
-          }
-
-          // Generate fund utilization
-          const funds = generateFundUtilization(ipoId);
-          for (const fund of funds) {
-            await storage.addFundUtilization(fund);
-          }
-
-          // Generate timeline events
-          const baseDate = savedIpo.expectedDate
-            ? new Date(savedIpo.expectedDate)
-            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-          const events = [
-            { type: "drhp_filing", offsetDays: -30, description: "DRHP filed with SEBI" },
-            { type: "price_band", offsetDays: -2, description: "Price band announced" },
-            { type: "open_date", offsetDays: 0, description: "IPO opens for subscription" },
-            { type: "close_date", offsetDays: 3, description: "IPO closes for subscription" },
-            { type: "allotment", offsetDays: 7, description: "Share allotment finalized" },
-            { type: "refund", offsetDays: 9, description: "Refund initiated for unallotted" },
-            { type: "listing", offsetDays: 10, description: "Shares listed on exchange" },
-          ];
-
-          for (const event of events) {
-            const eventDate = new Date(baseDate);
-            eventDate.setDate(eventDate.getDate() + event.offsetDays);
-            await storage.addTimelineEvent({
-              ipoId,
-              eventType: event.type,
-              eventDate: eventDate.toISOString().split('T')[0],
-              description: event.description,
-              isConfirmed: savedIpo.expectedDate ? event.offsetDays <= 0 : false,
-            });
-          }
-        }
-        console.log(`✅ Auto-synced ${scrapedIpos.length} IPOs with analytics data from Chittorgarh`);
-      } else {
-        console.log("⚠️ No IPOs found from scraper. Use Admin panel to manually sync.");
-      }
+      await syncIpos();
     } catch (error) {
       console.error("❌ Auto-sync failed:", error);
       console.log("💡 Use the Admin panel (/admin) to manually sync IPO data.");

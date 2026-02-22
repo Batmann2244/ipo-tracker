@@ -83,16 +83,32 @@ export interface IStorage extends IAuthStorage {
   getIpoTimeline(ipoId: number): Promise<IpoTimelineEvent[]>;
   addTimelineEvent(event: InsertIpoTimeline): Promise<IpoTimelineEvent>;
   getAllUpcomingEvents(days?: number): Promise<(IpoTimelineEvent & { ipo: Ipo })[]>;
+
+  // Bulk Operations
+  bulkAddGmpHistory(entries: InsertGmpHistory[]): Promise<GmpHistoryEntry[]>;
+  bulkAddPeerCompanies(peers: InsertPeerCompany[]): Promise<PeerCompany[]>;
+  bulkAddFundUtilization(entries: InsertFundUtilization[]): Promise<FundUtilizationEntry[]>;
+  bulkAddTimelineEvents(events: InsertIpoTimeline[]): Promise<IpoTimelineEvent[]>;
+
+  getAllPeerCompanyIpoIds(): Promise<Set<number>>;
+  getAllFundUtilizationIpoIds(): Promise<Set<number>>;
+  getAllTimelineIpoIds(): Promise<Set<number>>;
 }
 
 export class DatabaseStorage implements IStorage {
+  private db: typeof db;
+
+  constructor(dbInstance = db) {
+    this.db = dbInstance;
+  }
+
   // Inherit auth methods
   getUser = authStorage.getUser;
   upsertUser = authStorage.upsertUser;
 
   // IPOs
   async getIpos(status?: string, sector?: string): Promise<Ipo[]> {
-    let query = db.select().from(ipos);
+    let query = this.db.select().from(ipos);
     const conditions = [];
     
     if (status) {
@@ -110,24 +126,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getIpo(id: number): Promise<Ipo | undefined> {
-    const [ipo] = await db.select().from(ipos).where(eq(ipos.id, id));
+    const [ipo] = await this.db.select().from(ipos).where(eq(ipos.id, id));
     return ipo;
   }
 
   async getIpoBySymbol(symbol: string): Promise<Ipo | undefined> {
-    const [ipo] = await db.select().from(ipos).where(eq(ipos.symbol, symbol));
+    const [ipo] = await this.db.select().from(ipos).where(eq(ipos.symbol, symbol));
     return ipo;
   }
 
   async createIpo(insertIpo: InsertIpo): Promise<Ipo> {
-    const [ipo] = await db.insert(ipos).values(insertIpo).returning();
+    const [ipo] = await this.db.insert(ipos).values(insertIpo).returning();
     return ipo;
   }
 
   async upsertIpo(insertIpo: InsertIpo): Promise<Ipo> {
     try {
       // Try to insert with onConflictDoUpdate
-      const result = await db
+      const result = await this.db
         .insert(ipos)
         .values(insertIpo)
         .onConflictDoUpdate({
@@ -145,7 +161,7 @@ export class DatabaseStorage implements IStorage {
       const existing = await this.getIpoBySymbol(insertIpo.symbol);
       
       if (existing) {
-        const [updated] = await db
+        const [updated] = await this.db
           .update(ipos)
           .set({
             ...insertIpo,
@@ -165,7 +181,7 @@ export class DatabaseStorage implements IStorage {
 
     try {
       // Try to insert with onConflictDoUpdate for bulk
-      const result = await db
+      const result = await this.db
         .insert(ipos)
         .values(insertIpos)
         .onConflictDoUpdate({
@@ -233,7 +249,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateIpo(id: number, data: Partial<InsertIpo>): Promise<Ipo | undefined> {
-    const [updated] = await db
+    const [updated] = await this.db
       .update(ipos)
       .set({
         ...data,
@@ -245,22 +261,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getIpoCount(): Promise<number> {
-    const result = await db.select().from(ipos);
+    const result = await this.db.select().from(ipos);
     return result.length;
   }
 
   async markAllAsListed(): Promise<number> {
-    const result = await db.update(ipos).set({ status: "listed" }).returning();
+    const result = await this.db.update(ipos).set({ status: "listed" }).returning();
     return result.length;
   }
 
   async deleteIpo(id: number): Promise<void> {
-    await db.delete(ipos).where(eq(ipos.id, id));
+    await this.db.delete(ipos).where(eq(ipos.id, id));
   }
 
   // Watchlist
   async getWatchlist(userId: string): Promise<WatchlistResponse[]> {
-    const items = await db
+    const items = await this.db
       .select({
         watchlist: watchlist,
         ipo: ipos,
@@ -276,7 +292,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWatchlistItem(userId: string, ipoId: number): Promise<WatchlistItem | undefined> {
-    const [item] = await db
+    const [item] = await this.db
         .select()
         .from(watchlist)
         .where(and(eq(watchlist.userId, userId), eq(watchlist.ipoId, ipoId)));
@@ -288,7 +304,7 @@ export class DatabaseStorage implements IStorage {
     const existing = await this.getWatchlistItem(userId, ipoId);
     if (existing) return existing;
 
-    const [item] = await db
+    const [item] = await this.db
       .insert(watchlist)
       .values({ userId, ipoId })
       .returning();
@@ -296,14 +312,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async removeFromWatchlist(userId: string, id: number): Promise<void> {
-    await db
+    await this.db
       .delete(watchlist)
       .where(and(eq(watchlist.id, id), eq(watchlist.userId, userId)));
   }
 
   // Alert Preferences
   async getAlertPreferences(userId: string): Promise<AlertPreferences | undefined> {
-    const [prefs] = await db
+    const [prefs] = await this.db
       .select()
       .from(alertPreferences)
       .where(eq(alertPreferences.userId, userId));
@@ -314,7 +330,7 @@ export class DatabaseStorage implements IStorage {
     const existing = await this.getAlertPreferences(userId);
     
     if (existing) {
-      const [updated] = await db
+      const [updated] = await this.db
         .update(alertPreferences)
         .set({
           ...prefs,
@@ -325,7 +341,7 @@ export class DatabaseStorage implements IStorage {
       return updated;
     }
     
-    const [created] = await db
+    const [created] = await this.db
       .insert(alertPreferences)
       .values({ userId, ...prefs })
       .returning();
@@ -333,7 +349,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllUsersWithAlerts(): Promise<AlertPreferences[]> {
-    return await db
+    return await this.db
       .select()
       .from(alertPreferences)
       .where(eq(alertPreferences.emailEnabled, true));
@@ -341,7 +357,7 @@ export class DatabaseStorage implements IStorage {
 
   // Alert Logs
   async createAlertLog(log: InsertAlertLog): Promise<AlertLog> {
-    const [created] = await db
+    const [created] = await this.db
       .insert(alertLogs)
       .values(log)
       .returning();
@@ -349,7 +365,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAlertLogs(userId?: string, limit: number = 50): Promise<AlertLog[]> {
-    let query = db.select().from(alertLogs);
+    let query = this.db.select().from(alertLogs);
     
     if (userId) {
       return await query
@@ -365,7 +381,7 @@ export class DatabaseStorage implements IStorage {
 
   // GMP History
   async addGmpHistory(entry: InsertGmpHistory): Promise<GmpHistoryEntry> {
-    const [created] = await db.insert(gmpHistory).values(entry).returning();
+    const [created] = await this.db.insert(gmpHistory).values(entry).returning();
     return created;
   }
 
@@ -373,7 +389,7 @@ export class DatabaseStorage implements IStorage {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
     
-    return await db
+    return await this.db
       .select()
       .from(gmpHistory)
       .where(and(
@@ -385,29 +401,29 @@ export class DatabaseStorage implements IStorage {
 
   // Peer Companies
   async getPeerCompanies(ipoId: number): Promise<PeerCompany[]> {
-    return await db
+    return await this.db
       .select()
       .from(peerCompanies)
       .where(eq(peerCompanies.ipoId, ipoId));
   }
 
   async addPeerCompany(peer: InsertPeerCompany): Promise<PeerCompany> {
-    const [created] = await db.insert(peerCompanies).values(peer).returning();
+    const [created] = await this.db.insert(peerCompanies).values(peer).returning();
     return created;
   }
 
   async deletePeerCompanies(ipoId: number): Promise<void> {
-    await db.delete(peerCompanies).where(eq(peerCompanies.ipoId, ipoId));
+    await this.db.delete(peerCompanies).where(eq(peerCompanies.ipoId, ipoId));
   }
 
   // Subscription Updates
   async addSubscriptionUpdate(update: InsertSubscriptionUpdate): Promise<SubscriptionUpdate> {
-    const [created] = await db.insert(subscriptionUpdates).values(update).returning();
+    const [created] = await this.db.insert(subscriptionUpdates).values(update).returning();
     return created;
   }
 
   async getSubscriptionUpdates(ipoId: number): Promise<SubscriptionUpdate[]> {
-    return await db
+    return await this.db
       .select()
       .from(subscriptionUpdates)
       .where(eq(subscriptionUpdates.ipoId, ipoId))
@@ -415,7 +431,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getLatestSubscription(ipoId: number): Promise<SubscriptionUpdate | undefined> {
-    const [latest] = await db
+    const [latest] = await this.db
       .select()
       .from(subscriptionUpdates)
       .where(eq(subscriptionUpdates.ipoId, ipoId))
@@ -426,19 +442,19 @@ export class DatabaseStorage implements IStorage {
 
   // Fund Utilization
   async getFundUtilization(ipoId: number): Promise<FundUtilizationEntry[]> {
-    return await db
+    return await this.db
       .select()
       .from(fundUtilization)
       .where(eq(fundUtilization.ipoId, ipoId));
   }
 
   async addFundUtilization(entry: InsertFundUtilization): Promise<FundUtilizationEntry> {
-    const [created] = await db.insert(fundUtilization).values(entry).returning();
+    const [created] = await this.db.insert(fundUtilization).values(entry).returning();
     return created;
   }
 
   async updateFundUtilization(id: number, data: Partial<InsertFundUtilization>): Promise<FundUtilizationEntry | undefined> {
-    const [updated] = await db
+    const [updated] = await this.db
       .update(fundUtilization)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(fundUtilization.id, id))
@@ -448,7 +464,7 @@ export class DatabaseStorage implements IStorage {
 
   // IPO Timeline
   async getIpoTimeline(ipoId: number): Promise<IpoTimelineEvent[]> {
-    return await db
+    return await this.db
       .select()
       .from(ipoTimeline)
       .where(eq(ipoTimeline.ipoId, ipoId))
@@ -456,7 +472,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async addTimelineEvent(event: InsertIpoTimeline): Promise<IpoTimelineEvent> {
-    const [created] = await db.insert(ipoTimeline).values(event).returning();
+    const [created] = await this.db.insert(ipoTimeline).values(event).returning();
     return created;
   }
 
@@ -465,7 +481,7 @@ export class DatabaseStorage implements IStorage {
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + days);
     
-    const events = await db
+    const events = await this.db
       .select({
         event: ipoTimeline,
         ipo: ipos,
@@ -478,6 +494,62 @@ export class DatabaseStorage implements IStorage {
       .orderBy(ipoTimeline.eventDate);
     
     return events.map(e => ({ ...e.event, ipo: e.ipo }));
+  }
+
+  // Bulk Operations Implementation
+  async bulkAddGmpHistory(entries: InsertGmpHistory[]): Promise<GmpHistoryEntry[]> {
+    if (entries.length === 0) return [];
+    try {
+      return await this.db.insert(gmpHistory).values(entries).returning();
+    } catch (error) {
+       console.error("Bulk add GMP history failed:", error);
+       return [];
+    }
+  }
+
+  async bulkAddPeerCompanies(peers: InsertPeerCompany[]): Promise<PeerCompany[]> {
+    if (peers.length === 0) return [];
+    try {
+      return await this.db.insert(peerCompanies).values(peers).returning();
+    } catch (error) {
+       console.error("Bulk add peer companies failed:", error);
+       return [];
+    }
+  }
+
+  async bulkAddFundUtilization(entries: InsertFundUtilization[]): Promise<FundUtilizationEntry[]> {
+    if (entries.length === 0) return [];
+    try {
+      return await this.db.insert(fundUtilization).values(entries).returning();
+    } catch (error) {
+       console.error("Bulk add fund utilization failed:", error);
+       return [];
+    }
+  }
+
+  async bulkAddTimelineEvents(events: InsertIpoTimeline[]): Promise<IpoTimelineEvent[]> {
+    if (events.length === 0) return [];
+    try {
+      return await this.db.insert(ipoTimeline).values(events).returning();
+    } catch (error) {
+       console.error("Bulk add timeline events failed:", error);
+       return [];
+    }
+  }
+
+  async getAllPeerCompanyIpoIds(): Promise<Set<number>> {
+    const results = await this.db.select({ ipoId: peerCompanies.ipoId }).from(peerCompanies);
+    return new Set(results.map(r => r.ipoId));
+  }
+
+  async getAllFundUtilizationIpoIds(): Promise<Set<number>> {
+    const results = await this.db.select({ ipoId: fundUtilization.ipoId }).from(fundUtilization);
+    return new Set(results.map(r => r.ipoId));
+  }
+
+  async getAllTimelineIpoIds(): Promise<Set<number>> {
+    const results = await this.db.select({ ipoId: ipoTimeline.ipoId }).from(ipoTimeline);
+    return new Set(results.map(r => r.ipoId));
   }
 }
 
