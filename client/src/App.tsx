@@ -21,15 +21,7 @@ import Billing from "@/pages/Billing";
 import NotFound from "@/pages/not-found";
 
 function PrivateRoute({ component: Component, hideFooter = false }: { component: React.ComponentType; hideFooter?: boolean }) {
-  const { user, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  const { user } = useAuth();
 
   if (!user) {
     return <Landing />;
