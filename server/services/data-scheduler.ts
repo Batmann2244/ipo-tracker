@@ -10,6 +10,9 @@ import {
 import { scraperAggregator } from "./scrapers";
 import { storage } from "../storage";
 import { ipoAlertsScraper } from "./scrapers/ipoalerts";
+import { getSourceLogger } from "../logger";
+
+const logger = getSourceLogger("scheduler");
 
 interface SchedulerState {
   isRunning: boolean;
@@ -45,7 +48,7 @@ async function fetchFromIpoAlertsIfScheduled(): Promise<void> {
   try {
     const result = await ipoAlertsScraper.getScheduledIpos();
     if (result.success && result.data.length > 0) {
-      console.log(`[IPOAlerts] ✅ Scheduled fetch: ${result.data.length} IPOs`);
+      logger.info(`[IPOAlerts] ✅ Scheduled fetch: ${result.data.length} IPOs`);
       for (const ipo of result.data) {
         await storage.upsertIpo({
           symbol: ipo.symbol,
@@ -67,7 +70,7 @@ async function fetchFromIpoAlertsIfScheduled(): Promise<void> {
       }
     }
   } catch (err) {
-    console.error(`[IPOAlerts] Scheduled fetch failed:`, err);
+    logger.error(`[IPOAlerts] Scheduled fetch failed:`, { error: err });
   }
 }
 
@@ -76,22 +79,20 @@ async function pollDataSources(): Promise<{
   gmp: GmpData[];
   alerts: AlertTrigger[];
 }> {
-  console.log(`\n${"=".repeat(60)}`);
-  console.log(`📡 DATA POLL #${state.pollCount + 1} - ${new Date().toISOString()}`);
-  console.log(`${"=".repeat(60)}`);
+  logger.info(`📡 DATA POLL #${state.pollCount + 1}`);
 
   const isBidding = isBiddingHours();
-  console.log(`📅 Bidding hours: ${isBidding ? "YES" : "NO"}`);
+  logger.info(`📅 Bidding hours: ${isBidding ? "YES" : "NO"}`);
 
   // 1. Sync IPO Details (The Missing Link!)
   try {
-    console.log("🔄 Syncing IPO data from Aggregator (All sources)...");
+    logger.info("🔄 Syncing IPO data from Aggregator (All sources)...");
     const aggregatedResults = await scraperAggregator.getIpos([
       "investorgain", "nsetools", "groww", "chittorgarh", "ipoalerts", "bse", "ipowatch", "zerodha", "nse"
     ]);
 
     if (aggregatedResults.data.length > 0) {
-      console.log(`📥 Upserting ${aggregatedResults.data.length} IPOs to database...`);
+      logger.info(`📥 Upserting ${aggregatedResults.data.length} IPOs to database...`);
       let upsertCount = 0;
 
       for (const ipo of aggregatedResults.data) {
@@ -110,19 +111,19 @@ async function pollDataSources(): Promise<{
           // Ideally we would sync timeline events here too, but for now we ensure the main record exists
           upsertCount++;
         } catch (dbErr) {
-          console.error(`❌ Failed to saving ${ipo.symbol}:`, dbErr);
+          logger.error(`❌ Failed to saving ${ipo.symbol}:`, { error: dbErr });
         }
       }
-      console.log(`✅ Successfully saved ${upsertCount} IPOs to DB.`);
+      logger.info(`✅ Successfully saved ${upsertCount} IPOs to DB.`);
     } else {
-      console.warn("⚠️ Aggregator returned 0 IPOs!");
+      logger.warn("⚠️ Aggregator returned 0 IPOs!");
     }
   } catch (err) {
-    console.error("❌ Aggregator sync failed:", err);
+    logger.error("❌ Aggregator sync failed:", { error: err });
   }
 
   // 2. Fetch Alerts (Existing Logic)
-  fetchFromIpoAlertsIfScheduled().catch(err => console.error('[IPOAlerts] Error:', err));
+  fetchFromIpoAlertsIfScheduled().catch(err => logger.error('[IPOAlerts] Error:', { error: err }));
 
   try {
     const [subscriptionData, gmpData] = await Promise.all([
@@ -147,25 +148,25 @@ async function pollDataSources(): Promise<{
     // ... Save Sub/GMP updates to DB ...
     // (Existing logic preserved below)
 
-    console.log(`\n✅ Poll complete. Next poll in ${isBidding ? "5" : "30"} minutes`);
+    logger.info(`✅ Poll complete. Next poll in ${isBidding ? "5" : "30"} minutes`);
 
     return { subscription: subscriptionData, gmp: gmpData, alerts };
   } catch (error) {
-    console.error("Poll failed:", error);
+    logger.error("Poll failed:", { error });
     throw error;
   }
 }
 
 export function startScheduler(): void {
   if (state.isRunning) {
-    console.log("⚠️ Scheduler already running");
+    logger.warn("⚠️ Scheduler already running");
     return;
   }
 
-  console.log("🚀 Starting data polling scheduler...");
+  logger.info("🚀 Starting data polling scheduler...");
   state.isRunning = true;
 
-  pollDataSources().catch(console.error);
+  pollDataSources().catch((error) => logger.error("Initial poll failed:", { error }));
 
   const schedulePoll = () => {
     const pollIntervalMs = isBiddingHours() ? 5 * 60 * 1000 : 30 * 60 * 1000;
@@ -174,7 +175,7 @@ export function startScheduler(): void {
       try {
         await pollDataSources();
       } catch (error) {
-        console.error("Scheduled poll failed:", error);
+        logger.error("Scheduled poll failed:", { error });
       }
 
       if (state.isRunning) {
@@ -185,12 +186,12 @@ export function startScheduler(): void {
 
   schedulePoll();
 
-  console.log("✅ Scheduler started - polling every 5 minutes during bidding hours, 30 minutes otherwise");
+  logger.info("✅ Scheduler started - polling every 5 minutes during bidding hours, 30 minutes otherwise");
 }
 
 export function stopScheduler(): void {
   if (!state.isRunning) {
-    console.log("⚠️ Scheduler not running");
+    logger.warn("⚠️ Scheduler not running");
     return;
   }
 
@@ -200,7 +201,7 @@ export function stopScheduler(): void {
   }
 
   state.isRunning = false;
-  console.log("🛑 Scheduler stopped");
+  logger.info("🛑 Scheduler stopped");
 }
 
 export function getSchedulerStatus(): {
@@ -226,7 +227,7 @@ export async function triggerManualPoll(): Promise<{
   gmp: GmpData[];
   alerts: AlertTrigger[];
 }> {
-  console.log("🔄 Manual poll triggered...");
+  logger.info("🔄 Manual poll triggered...");
   return pollDataSources();
 }
 
@@ -236,5 +237,5 @@ export function getRecentAlerts(limit = 20): AlertTrigger[] {
 
 export function clearAlerts(): void {
   state.alerts = [];
-  console.log("🗑️ Alerts cleared");
+  logger.info("🗑️ Alerts cleared");
 }
