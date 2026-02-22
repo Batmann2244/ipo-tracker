@@ -260,71 +260,66 @@ async function getIposByStatus(
   const allIpos: IpoData[] = [];
 
   try {
-    let page = 1;
     let totalPages = 1;
 
-    // Fetch first page to get metadata
-    if (page <= totalPages && canMakeRequest()) {
-      const response = await fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}&page=${page}`) as IpoAlertsResponse;
+    if (canMakeRequest()) {
+      // Fetch first page
+      const firstResponse = await fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}&page=1`) as IpoAlertsResponse;
 
-      // Update pagination info
-      totalPages = response.meta?.totalPages || 1;
+      totalPages = firstResponse.meta?.totalPages || 1;
 
       sourceLogger.info("IPOAlerts page received", {
         status,
-        page,
+        page: 1,
         totalPages,
-        ipos: response.ipos.length,
-        count: response.meta?.count,
-        countOnPage: response.meta?.countOnPage,
-        limit: response.meta?.limit,
-        info: response.meta?.info,
+        ipos: firstResponse.ipos.length,
+        count: firstResponse.meta?.count,
+        countOnPage: firstResponse.meta?.countOnPage,
+        limit: firstResponse.meta?.limit,
+        info: firstResponse.meta?.info,
       });
 
-      // Collect IPOs
-      allIpos.push(...response.ipos.map(parseIpoData));
-      page++;
-    }
+      allIpos.push(...firstResponse.ipos.map(parseIpoData));
 
-    // Fetch remaining pages in parallel if needed and allowed
-    if (page <= totalPages) {
-      const remainingRequests = getRemainingRequests();
-      const pagesNeeded = totalPages - page + 1;
-      const pagesToFetchCount = Math.min(pagesNeeded, remainingRequests);
+      // Fetch remaining pages in parallel if needed and allowed
+      if (totalPages > 1) {
+        const remainingRequests = getRemainingRequests();
+        const pagesNeeded = totalPages - 1;
+        const pagesToFetchCount = Math.min(pagesNeeded, remainingRequests);
 
-      if (pagesToFetchCount > 0) {
-        sourceLogger.info("IPOAlerts fetching remaining pages in parallel", {
-          pagesStartingFrom: page,
-          count: pagesToFetchCount,
-          totalPages
-        });
-
-        const pageNumbers = Array.from({ length: pagesToFetchCount }, (_, i) => page + i);
-        const limit = pLimit(5); // Limit concurrency to 5 requests
-
-        const responses = await Promise.all(
-          pageNumbers.map(p => limit(() => fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}&page=${p}`)))
-        );
-
-        responses.forEach((response: any, index) => {
-          const currentPage = pageNumbers[index];
-          const typedResponse = response as IpoAlertsResponse;
-
-          sourceLogger.info("IPOAlerts page received", {
-            status,
-            page: currentPage,
+        if (pagesToFetchCount < pagesNeeded) {
+          sourceLogger.warn("IPOAlerts pagination limited by daily quota", {
             totalPages,
-            ipos: typedResponse.ipos.length,
-            count: typedResponse.meta?.count,
-            countOnPage: typedResponse.meta?.countOnPage,
-            limit: typedResponse.meta?.limit,
-            info: typedResponse.meta?.info,
+            pagesNeeded,
+            remainingRequests,
+            pagesToFetchCount
           });
+        }
 
-          allIpos.push(...typedResponse.ipos.map(parseIpoData));
-        });
+        if (pagesToFetchCount > 0) {
+          const pages = Array.from({ length: pagesToFetchCount }, (_, i) => i + 2);
 
-        page += pagesToFetchCount;
+          // Use concurrency limit to be respectful to the API even if quota allows more
+          const limit = pLimit(5);
+
+          sourceLogger.info("Fetching remaining IPOAlerts pages in parallel", { pages, concurrency: 5 });
+
+          const responses = await Promise.all(
+            pages.map(page => limit(() => fetchFromApi(`/ipos?status=${status}&limit=${MAX_PER_REQUEST}&page=${page}`) as Promise<IpoAlertsResponse>))
+          );
+
+          responses.forEach((response, index) => {
+            const page = pages[index];
+            sourceLogger.info("IPOAlerts page received", {
+              status,
+              page,
+              totalPages,
+              ipos: response.ipos.length,
+              count: response.meta?.count
+            });
+            allIpos.push(...response.ipos.map(parseIpoData));
+          });
+        }
       }
     }
 
