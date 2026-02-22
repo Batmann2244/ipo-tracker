@@ -1,6 +1,6 @@
 import { randomBytes, createHash } from 'crypto';
 import { db } from '../db';
-import { apiKeys, subscriptions, apiUsageLogs, dailyUsageStats, TIER_LIMITS, type ApiKey, type Subscription } from '@shared/schema';
+import { apiKeys, subscriptions, apiUsageLogs, dailyUsageStats, TIER_LIMITS, type ApiKey, type Subscription, type ApiKeyWithUsage } from '@shared/schema';
 import { eq, and, gte, sql } from 'drizzle-orm';
 
 const API_KEY_PREFIX = 'ipo_';
@@ -248,6 +248,43 @@ export async function getUsageStats(userId: string, days: number = 30): Promise<
       gte(dailyUsageStats.date, startDate)
     ))
     .orderBy(dailyUsageStats.date);
+}
+
+export async function getUserApiKeysWithUsage(userId: string): Promise<ApiKeyWithUsage[]> {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const keys = await db.select({
+      id: apiKeys.id,
+      userId: apiKeys.userId,
+      name: apiKeys.name,
+      keyPrefix: apiKeys.keyPrefix,
+      keyHash: apiKeys.keyHash,
+      tier: apiKeys.tier,
+      isActive: apiKeys.isActive,
+      lastUsedAt: apiKeys.lastUsedAt,
+      expiresAt: apiKeys.expiresAt,
+      createdAt: apiKeys.createdAt,
+      revokedAt: apiKeys.revokedAt,
+      todayUsage: sql<number>`coalesce(${dailyUsageStats.callCount}, 0)`,
+    })
+    .from(apiKeys)
+    .leftJoin(dailyUsageStats, and(
+      eq(apiKeys.id, dailyUsageStats.apiKeyId),
+      eq(dailyUsageStats.date, today)
+    ))
+    .where(and(
+      eq(apiKeys.userId, userId),
+      eq(apiKeys.isActive, true)
+    ));
+
+  return keys.map(key => {
+    const limits = getTierLimits(key.tier);
+    return {
+      ...key,
+      dailyLimit: limits.apiCallsPerDay,
+    };
+  });
 }
 
 type DailyUsageStats = typeof dailyUsageStats.$inferSelect;
