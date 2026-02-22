@@ -92,6 +92,16 @@ export interface IStorage extends IAuthStorage {
   getIpoTimeline(ipoId: number): Promise<IpoTimelineEvent[]>;
   addTimelineEvent(event: InsertIpoTimeline): Promise<IpoTimelineEvent>;
   getAllUpcomingEvents(days?: number): Promise<(IpoTimelineEvent & { ipo: Ipo })[]>;
+
+  // Bulk Operations
+  bulkAddGmpHistory(entries: InsertGmpHistory[]): Promise<GmpHistoryEntry[]>;
+  bulkAddPeerCompanies(peers: InsertPeerCompany[]): Promise<PeerCompany[]>;
+  bulkAddFundUtilization(entries: InsertFundUtilization[]): Promise<FundUtilizationEntry[]>;
+  bulkAddTimelineEvents(events: InsertIpoTimeline[]): Promise<IpoTimelineEvent[]>;
+
+  getAllPeerCompanyIpoIds(): Promise<Set<number>>;
+  getAllFundUtilizationIpoIds(): Promise<Set<number>>;
+  getAllTimelineIpoIds(): Promise<Set<number>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -248,6 +258,42 @@ export class DatabaseStorage implements IStorage {
 
   async getAllUpcomingEvents(days: number = 30): Promise<(IpoTimelineEvent & { ipo: Ipo })[]> {
     return this.timeline.getAllUpcomingEvents(days);
+  }
+
+  // Bulk Operations
+  async bulkAddGmpHistory(entries: InsertGmpHistory[]): Promise<GmpHistoryEntry[]> {
+    if (entries.length === 0) return [];
+    return Promise.all(entries.map(e => this.gmp.addGmpHistory(e)));
+  }
+
+  async bulkAddPeerCompanies(peers: InsertPeerCompany[]): Promise<PeerCompany[]> {
+    if (peers.length === 0) return [];
+    return Promise.all(peers.map(p => this.peers.addPeerCompany(p)));
+  }
+
+  async bulkAddFundUtilization(entries: InsertFundUtilization[]): Promise<FundUtilizationEntry[]> {
+    if (entries.length === 0) return [];
+    return Promise.all(entries.map(e => this.funds.addFundUtilization(e)));
+  }
+
+  async bulkAddTimelineEvents(events: InsertIpoTimeline[]): Promise<IpoTimelineEvent[]> {
+    if (events.length === 0) return [];
+    return Promise.all(events.map(e => this.timeline.addTimelineEvent(e)));
+  }
+
+  async getAllPeerCompanyIpoIds(): Promise<Set<number>> {
+    const peers = await this.peers.getAllPeerCompanies();
+    return new Set(peers.map(p => p.ipoId));
+  }
+
+  async getAllFundUtilizationIpoIds(): Promise<Set<number>> {
+    const funds = await this.funds.getAllFundUtilization();
+    return new Set(funds.map(f => f.ipoId));
+  }
+
+  async getAllTimelineIpoIds(): Promise<Set<number>> {
+    const events = await this.timeline.getAllTimelineEvents();
+    return new Set(events.map(e => e.ipoId));
   }
 }
 

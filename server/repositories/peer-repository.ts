@@ -10,6 +10,7 @@ export interface IPeerRepository {
   getPeerCompanies(ipoId: number): Promise<PeerCompany[]>;
   addPeerCompany(peer: InsertPeerCompany): Promise<PeerCompany>;
   deletePeerCompanies(ipoId: number): Promise<void>;
+  getAllPeerCompanies(): Promise<PeerCompany[]>;
 }
 
 export class PeerRepository implements IPeerRepository {
@@ -27,5 +28,9 @@ export class PeerRepository implements IPeerRepository {
 
   async deletePeerCompanies(ipoId: number): Promise<void> {
     await db.delete(peerCompanies).where(eq(peerCompanies.ipoId, ipoId));
+  }
+
+  async getAllPeerCompanies(): Promise<PeerCompany[]> {
+    return await db.select().from(peerCompanies);
   }
 }

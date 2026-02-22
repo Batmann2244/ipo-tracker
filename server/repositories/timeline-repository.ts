@@ -12,6 +12,7 @@ export interface ITimelineRepository {
   getIpoTimeline(ipoId: number): Promise<IpoTimelineEvent[]>;
   addTimelineEvent(event: InsertIpoTimeline): Promise<IpoTimelineEvent>;
   getAllUpcomingEvents(days?: number): Promise<(IpoTimelineEvent & { ipo: Ipo })[]>;
+  getAllTimelineEvents(): Promise<IpoTimelineEvent[]>;
 }
 
 export class TimelineRepository implements ITimelineRepository {
@@ -45,5 +46,9 @@ export class TimelineRepository implements ITimelineRepository {
       .orderBy(ipoTimeline.eventDate);
 
     return events.map(e => ({ ...e.event, ipo: e.ipo }));
+  }
+
+  async getAllTimelineEvents(): Promise<IpoTimelineEvent[]> {
+    return await db.select().from(ipoTimeline);
   }
 }

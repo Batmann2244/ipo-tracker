@@ -10,6 +10,7 @@ export interface IFundUtilizationRepository {
   getFundUtilization(ipoId: number): Promise<FundUtilizationEntry[]>;
   addFundUtilization(entry: InsertFundUtilization): Promise<FundUtilizationEntry>;
   updateFundUtilization(id: number, data: Partial<InsertFundUtilization>): Promise<FundUtilizationEntry | undefined>;
+  getAllFundUtilization(): Promise<FundUtilizationEntry[]>;
 }
 
 export class FundUtilizationRepository implements IFundUtilizationRepository {
@@ -32,5 +33,9 @@ export class FundUtilizationRepository implements IFundUtilizationRepository {
       .where(eq(fundUtilization.id, id))
       .returning();
     return updated;
+  }
+
+  async getAllFundUtilization(): Promise<FundUtilizationEntry[]> {
+    return await db.select().from(fundUtilization);
   }
 }
