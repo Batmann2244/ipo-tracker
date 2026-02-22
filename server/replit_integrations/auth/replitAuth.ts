@@ -28,6 +28,10 @@ export function getSession() {
   const sessionStore = new MemoryStoreSession({
     checkPeriod: sessionTtl
   });
+
+  if (!process.env.SESSION_SECRET && process.env.NODE_ENV === "production") {
+    throw new Error("SESSION_SECRET environment variable must be set in production");
+  }
   
   return session({
     secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
