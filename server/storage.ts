@@ -29,7 +29,7 @@ import {
   type IpoTimelineEvent,
   type InsertIpoTimeline,
 } from "@shared/schema";
-import { eq, ne, and, desc, gte } from "drizzle-orm";
+import { eq, ne, and, desc, gte, inArray, sql } from "drizzle-orm";
 import { authStorage, IAuthStorage } from "./replit_integrations/auth/storage";
 
 export interface IStorage extends IAuthStorage {
@@ -39,6 +39,7 @@ export interface IStorage extends IAuthStorage {
   getIpoBySymbol(symbol: string): Promise<Ipo | undefined>;
   createIpo(ipo: InsertIpo): Promise<Ipo>;
   upsertIpo(ipo: InsertIpo): Promise<Ipo>;
+  batchUpsertIpos(ipos: InsertIpo[]): Promise<Ipo[]>;
   updateIpo(id: number, data: Partial<InsertIpo>): Promise<Ipo | undefined>;
   getIpoCount(): Promise<number>;
   markAllAsListed(): Promise<number>;
@@ -61,11 +62,14 @@ export interface IStorage extends IAuthStorage {
 
   // GMP History
   addGmpHistory(entry: InsertGmpHistory): Promise<GmpHistoryEntry>;
+  batchAddGmpHistory(entries: InsertGmpHistory[]): Promise<GmpHistoryEntry[]>;
   getGmpHistory(ipoId: number, days?: number): Promise<GmpHistoryEntry[]>;
 
   // Peer Companies
   getPeerCompanies(ipoId: number): Promise<PeerCompany[]>;
+  batchGetPeerCompanies(ipoIds: number[]): Promise<Map<number, PeerCompany[]>>;
   addPeerCompany(peer: InsertPeerCompany): Promise<PeerCompany>;
+  batchAddPeerCompanies(peers: InsertPeerCompany[]): Promise<PeerCompany[]>;
   deletePeerCompanies(ipoId: number): Promise<void>;
 
   // Subscription Updates
@@ -75,12 +79,16 @@ export interface IStorage extends IAuthStorage {
 
   // Fund Utilization
   getFundUtilization(ipoId: number): Promise<FundUtilizationEntry[]>;
+  batchGetFundUtilization(ipoIds: number[]): Promise<Map<number, FundUtilizationEntry[]>>;
   addFundUtilization(entry: InsertFundUtilization): Promise<FundUtilizationEntry>;
+  batchAddFundUtilization(entries: InsertFundUtilization[]): Promise<FundUtilizationEntry[]>;
   updateFundUtilization(id: number, data: Partial<InsertFundUtilization>): Promise<FundUtilizationEntry | undefined>;
 
   // IPO Timeline
   getIpoTimeline(ipoId: number): Promise<IpoTimelineEvent[]>;
+  batchGetIpoTimeline(ipoIds: number[]): Promise<Map<number, IpoTimelineEvent[]>>;
   addTimelineEvent(event: InsertIpoTimeline): Promise<IpoTimelineEvent>;
+  batchAddTimelineEvents(events: InsertIpoTimeline[]): Promise<IpoTimelineEvent[]>;
   getAllUpcomingEvents(days?: number): Promise<(IpoTimelineEvent & { ipo: Ipo })[]>;
 }
 
@@ -157,6 +165,79 @@ export class DatabaseStorage implements IStorage {
       
       return this.createIpo(insertIpo);
     }
+  }
+
+  async batchUpsertIpos(insertIpos: InsertIpo[]): Promise<Ipo[]> {
+    if (insertIpos.length === 0) return [];
+
+    // SQLite has a limit on variables per query. Let's process in chunks.
+    const CHUNK_SIZE = 50;
+    const results: Ipo[] = [];
+
+    for (let i = 0; i < insertIpos.length; i += CHUNK_SIZE) {
+      const chunk = insertIpos.slice(i, i + CHUNK_SIZE);
+      try {
+        const chunkResults = await db
+          .insert(ipos)
+          .values(chunk)
+          .onConflictDoUpdate({
+            target: ipos.symbol,
+            set: {
+              companyName: sql`excluded.company_name`,
+              priceRange: sql`excluded.price_range`,
+              totalShares: sql`excluded.total_shares`,
+              expectedDate: sql`excluded.expected_date`,
+              status: sql`excluded.status`,
+              description: sql`excluded.description`,
+              sector: sql`excluded.sector`,
+              revenueGrowth: sql`excluded.revenue_growth`,
+              ebitdaMargin: sql`excluded.ebitda_margin`,
+              patMargin: sql`excluded.pat_margin`,
+              roe: sql`excluded.roe`,
+              roce: sql`excluded.roce`,
+              debtToEquity: sql`excluded.debt_to_equity`,
+              peRatio: sql`excluded.pe_ratio`,
+              pbRatio: sql`excluded.pb_ratio`,
+              sectorPeMedian: sql`excluded.sector_pe_median`,
+              issueSize: sql`excluded.issue_size`,
+              freshIssue: sql`excluded.fresh_issue`,
+              ofsRatio: sql`excluded.ofs_ratio`,
+              lotSize: sql`excluded.lot_size`,
+              minInvestment: sql`excluded.min_investment`,
+              gmp: sql`excluded.gmp`,
+              subscriptionQib: sql`excluded.subscription_qib`,
+              subscriptionHni: sql`excluded.subscription_hni`,
+              subscriptionRetail: sql`excluded.subscription_retail`,
+              subscriptionNii: sql`excluded.subscription_nii`,
+              investorGainId: sql`excluded.investor_gain_id`,
+              basisOfAllotmentDate: sql`excluded.basis_of_allotment_date`,
+              refundsInitiationDate: sql`excluded.refunds_initiation_date`,
+              creditToDematDate: sql`excluded.credit_to_demat_date`,
+              promoterHolding: sql`excluded.promoter_holding`,
+              postIpoPromoterHolding: sql`excluded.post_ipo_promoter_holding`,
+              fundamentalsScore: sql`excluded.fundamentals_score`,
+              valuationScore: sql`excluded.valuation_score`,
+              governanceScore: sql`excluded.governance_score`,
+              overallScore: sql`excluded.overall_score`,
+              riskLevel: sql`excluded.risk_level`,
+              redFlags: sql`excluded.red_flags`,
+              pros: sql`excluded.pros`,
+              aiSummary: sql`excluded.ai_summary`,
+              aiRecommendation: sql`excluded.ai_recommendation`,
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
+        results.push(...chunkResults);
+      } catch (error) {
+        // Fallback to sequential upsert if bulk fails
+        console.error("Bulk upsert failed, falling back to sequential:", error);
+        for (const item of chunk) {
+          results.push(await this.upsertIpo(item));
+        }
+      }
+    }
+    return results;
   }
 
   async updateIpo(id: number, data: Partial<InsertIpo>): Promise<Ipo | undefined> {
@@ -296,6 +377,13 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async batchAddGmpHistory(entries: InsertGmpHistory[]): Promise<GmpHistoryEntry[]> {
+    if (entries.length === 0) return [];
+    // No unique constraint on GMP history, so straightforward insert
+    const results = await db.insert(gmpHistory).values(entries).returning();
+    return results;
+  }
+
   async getGmpHistory(ipoId: number, days: number = 7): Promise<GmpHistoryEntry[]> {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -318,9 +406,32 @@ export class DatabaseStorage implements IStorage {
       .where(eq(peerCompanies.ipoId, ipoId));
   }
 
+  async batchGetPeerCompanies(ipoIds: number[]): Promise<Map<number, PeerCompany[]>> {
+    if (ipoIds.length === 0) return new Map();
+
+    const peers = await db
+      .select()
+      .from(peerCompanies)
+      .where(inArray(peerCompanies.ipoId, ipoIds));
+
+    const map = new Map<number, PeerCompany[]>();
+    for (const peer of peers) {
+      const list = map.get(peer.ipoId) || [];
+      list.push(peer);
+      map.set(peer.ipoId, list);
+    }
+    return map;
+  }
+
   async addPeerCompany(peer: InsertPeerCompany): Promise<PeerCompany> {
     const [created] = await db.insert(peerCompanies).values(peer).returning();
     return created;
+  }
+
+  async batchAddPeerCompanies(peers: InsertPeerCompany[]): Promise<PeerCompany[]> {
+    if (peers.length === 0) return [];
+    const results = await db.insert(peerCompanies).values(peers).returning();
+    return results;
   }
 
   async deletePeerCompanies(ipoId: number): Promise<void> {
@@ -359,9 +470,32 @@ export class DatabaseStorage implements IStorage {
       .where(eq(fundUtilization.ipoId, ipoId));
   }
 
+  async batchGetFundUtilization(ipoIds: number[]): Promise<Map<number, FundUtilizationEntry[]>> {
+    if (ipoIds.length === 0) return new Map();
+
+    const funds = await db
+      .select()
+      .from(fundUtilization)
+      .where(inArray(fundUtilization.ipoId, ipoIds));
+
+    const map = new Map<number, FundUtilizationEntry[]>();
+    for (const fund of funds) {
+      const list = map.get(fund.ipoId) || [];
+      list.push(fund);
+      map.set(fund.ipoId, list);
+    }
+    return map;
+  }
+
   async addFundUtilization(entry: InsertFundUtilization): Promise<FundUtilizationEntry> {
     const [created] = await db.insert(fundUtilization).values(entry).returning();
     return created;
+  }
+
+  async batchAddFundUtilization(entries: InsertFundUtilization[]): Promise<FundUtilizationEntry[]> {
+    if (entries.length === 0) return [];
+    const results = await db.insert(fundUtilization).values(entries).returning();
+    return results;
   }
 
   async updateFundUtilization(id: number, data: Partial<InsertFundUtilization>): Promise<FundUtilizationEntry | undefined> {
@@ -382,9 +516,33 @@ export class DatabaseStorage implements IStorage {
       .orderBy(ipoTimeline.eventDate);
   }
 
+  async batchGetIpoTimeline(ipoIds: number[]): Promise<Map<number, IpoTimelineEvent[]>> {
+    if (ipoIds.length === 0) return new Map();
+
+    const events = await db
+      .select()
+      .from(ipoTimeline)
+      .where(inArray(ipoTimeline.ipoId, ipoIds))
+      .orderBy(ipoTimeline.eventDate);
+
+    const map = new Map<number, IpoTimelineEvent[]>();
+    for (const event of events) {
+      const list = map.get(event.ipoId) || [];
+      list.push(event);
+      map.set(event.ipoId, list);
+    }
+    return map;
+  }
+
   async addTimelineEvent(event: InsertIpoTimeline): Promise<IpoTimelineEvent> {
     const [created] = await db.insert(ipoTimeline).values(event).returning();
     return created;
+  }
+
+  async batchAddTimelineEvents(events: InsertIpoTimeline[]): Promise<IpoTimelineEvent[]> {
+    if (events.length === 0) return [];
+    const results = await db.insert(ipoTimeline).values(events).returning();
+    return results;
   }
 
   async getAllUpcomingEvents(days: number = 30): Promise<(IpoTimelineEvent & { ipo: Ipo })[]> {
