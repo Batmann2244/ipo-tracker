@@ -3,6 +3,7 @@ import * as puppeteer from "puppeteer";
 import type { Logger } from "winston";
 import { getSourceLogger } from "../../logger";
 import { scraperLogger, type ScraperSource, type ScraperOperation } from "../scraper-logger";
+import { calculateIpoScore } from "../scoring";
 
 export const DEFAULT_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -531,79 +532,22 @@ export function parseFinancialMetrics(data: any): Partial<IpoData> {
 }
 
 export function generateScores(data: Partial<IpoData>): Partial<IpoData> {
-  // Fundamentals Score (0-10)
-  let fundamentalsScore = 5;
-  if (data.revenueGrowth) fundamentalsScore += Math.min(2, data.revenueGrowth / 20);
-  if (data.roe) fundamentalsScore += Math.min(2, data.roe / 15);
-  if (data.roce) fundamentalsScore += Math.min(1, data.roce / 30);
-
-  // Valuation Score (0-10)
-  let valuationScore = 5;
-  if (data.peRatio && data.sectorPeMedian) {
-    const peDiff = (data.peRatio - data.sectorPeMedian) / data.sectorPeMedian;
-    valuationScore += Math.max(-3, Math.min(2, -peDiff * 5));
-  }
-  if (data.pbRatio) valuationScore += Math.min(2, Math.max(-1, 3 - data.pbRatio / 2));
-
-  // Governance Score (0-10)
-  let governanceScore = 5;
-  if (data.promoterHolding && data.promoterHolding < 75) governanceScore += 2;
-  if (data.debtToEquity && data.debtToEquity < 0.5) governanceScore += 2;
-  if (data.patMargin && data.patMargin > 10) governanceScore += 1;
-
-  const validScores = [fundamentalsScore, valuationScore, governanceScore].filter(s => !isNaN(s));
-  const overallScore = validScores.length > 0
-    ? (fundamentalsScore * 0.4 + valuationScore * 0.35 + governanceScore * 0.25) / 1
-    : undefined;
+  const scoreResult = calculateIpoScore(data as any);
 
   return {
-    fundamentalsScore: Math.max(0, Math.min(10, fundamentalsScore)),
-    valuationScore: Math.max(0, Math.min(10, valuationScore)),
-    governanceScore: Math.max(0, Math.min(10, governanceScore)),
-    overallScore: overallScore ? Math.max(0, Math.min(10, overallScore)) : undefined,
+    fundamentalsScore: scoreResult.fundamentalsScore,
+    valuationScore: scoreResult.valuationScore,
+    governanceScore: scoreResult.governanceScore,
+    overallScore: scoreResult.overallScore,
   };
 }
 
 export function generateRiskAssessment(data: Partial<IpoData>): Partial<IpoData> {
-  const redFlags: string[] = [];
-  const pros: string[] = [];
-
-  // Red flags
-  if (data.peRatio && data.sectorPeMedian && data.peRatio > data.sectorPeMedian * 1.3) {
-    redFlags.push(`P/E ratio ${((data.peRatio / data.sectorPeMedian - 1) * 100).toFixed(0)}% above sector median`);
-  }
-  if (data.ofsRatio && data.ofsRatio > 0.3) {
-    redFlags.push("Offer for Sale (OFS) ratio above 30%");
-  }
-  if (data.debtToEquity && data.debtToEquity > 1) {
-    redFlags.push(`High debt-to-equity ratio (${data.debtToEquity.toFixed(2)})`);
-  }
-  if (data.revenueGrowth && data.revenueGrowth < 5) {
-    redFlags.push("Low revenue growth");
-  }
-
-  // Pros
-  if (data.revenueGrowth && data.revenueGrowth > 20) {
-    pros.push(`Strong revenue growth (${data.revenueGrowth.toFixed(1)}% CAGR)`);
-  }
-  if (data.roe && data.roe > 18) {
-    pros.push(`Healthy ROE (${data.roe.toFixed(1)}%)`);
-  }
-  if (data.debtToEquity && data.debtToEquity < 0.5) {
-    pros.push(`Low debt levels (D/E: ${data.debtToEquity.toFixed(2)})`);
-  }
-  if (data.gmp && data.gmp > 0) {
-    pros.push("Positive GMP indicating market confidence");
-  }
-
-  const riskLevel: "conservative" | "moderate" | "aggressive" =
-    redFlags.length > 3 ? "aggressive" :
-      redFlags.length > 1 ? "moderate" :
-        "conservative";
+  const scoreResult = calculateIpoScore(data as any);
 
   return {
-    redFlags: redFlags.length > 0 ? redFlags : undefined,
-    pros: pros.length > 0 ? pros : undefined,
-    riskLevel: redFlags.length > 0 ? riskLevel : undefined,
+    redFlags: scoreResult.redFlags.length > 0 ? scoreResult.redFlags : undefined,
+    pros: scoreResult.pros.length > 0 ? scoreResult.pros : undefined,
+    riskLevel: scoreResult.riskLevel,
   };
 }
