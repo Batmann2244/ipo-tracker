@@ -1,6 +1,25 @@
 import { BaseScraper, ScraperResult, IpoData, SubscriptionData, GmpData } from './base';
 import * as puppeteer from 'puppeteer';
 
+export function shouldForceJsonParse(url: string, resourceType: string): boolean {
+    const apiPatterns = [
+        'GetPipoData',
+        'IPOIssues',
+        'PublicIssueData',
+        '/api/',
+        'GetData'
+    ];
+
+    // Check if URL matches any API pattern
+    const isApiUrl = apiPatterns.some(pattern => url.includes(pattern));
+
+    // Check if resource type suggests an API call (XHR or Fetch)
+    // We explicitly exclude 'document' to avoid parsing the main page as JSON
+    const isApiResource = resourceType === 'xhr' || resourceType === 'fetch';
+
+    return isApiUrl && isApiResource;
+}
+
 export class BseScraper extends BaseScraper {
     constructor() {
         super('bse');
@@ -67,27 +86,20 @@ export class BseScraper extends BaseScraper {
                 ) {
                     try {
                         const contentType = response.headers()['content-type'] || '';
+                        const resourceType = response.request().resourceType();
 
                         this.sourceLogger.info(`📡 Intercepted BSE endpoint: ${url}`, {
                             status,
-                            contentType
+                            contentType,
+                            resourceType
                         });
 
                         // FIX: Attempt to parse JSON for API URLs even if content-type is wrong
-                        // We check for 'xhr' or 'fetch' resource types to avoid trying to parse the main HTML document as JSON,
-                        // while still forcing JSON parsing for API endpoints that might return incorrect content-type headers.
-                        const resourceType = response.request().resourceType();
-                        const isJsonContentType = contentType.includes('application/json');
-                        const isApiUrl = url.includes('GetPipoData') ||
-                                         url.includes('IPOIssues') ||
-                                         url.includes('PublicIssueData') ||
-                                         url.includes('/api/') ||
-                                         url.includes('GetData');
+                        // We check for 'xhr' or 'fetch' to avoid trying to parse the main HTML document
+                        const isJson = contentType.includes('application/json');
+                        const shouldParse = isJson || shouldForceJsonParse(url, resourceType);
 
-                        const shouldParseAsJson = isJsonContentType ||
-                                                  (isApiUrl && (resourceType === 'xhr' || resourceType === 'fetch'));
-
-                        if (shouldParseAsJson) {
+                        if (shouldParse) {
                             try {
                                 const data = await response.json();
                                 this.sourceLogger.info('JSON data received', {
