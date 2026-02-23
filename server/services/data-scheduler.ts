@@ -102,6 +102,30 @@ async function pollDataSources(): Promise<{
         lotSize: ipo.lotSize,
         expectedDate: ipo.listingDate || ipo.closeDate || ipo.openDate || null,
         minInvestment: (ipo.priceMin && ipo.lotSize) ? String(ipo.priceMin * ipo.lotSize) : null,
+
+        // Pass through financial fields
+        revenueGrowth: ipo.revenueGrowth,
+        ebitdaMargin: ipo.ebitdaMargin,
+        patMargin: ipo.patMargin,
+        roe: ipo.roe,
+        roce: ipo.roce,
+        debtToEquity: ipo.debtToEquity,
+        peRatio: ipo.peRatio,
+        pbRatio: ipo.pbRatio,
+        sectorPeMedian: ipo.sectorPeMedian,
+        promoterHolding: ipo.promoterHolding,
+        postIpoPromoterHolding: ipo.postIpoPromoterHolding,
+
+        // Pass through scores and analysis
+        fundamentalsScore: ipo.fundamentalsScore,
+        valuationScore: ipo.valuationScore,
+        governanceScore: ipo.governanceScore,
+        overallScore: ipo.overallScore,
+        riskLevel: ipo.riskLevel,
+        redFlags: ipo.redFlags ? JSON.stringify(ipo.redFlags) : undefined,
+        pros: ipo.pros ? JSON.stringify(ipo.pros) : undefined,
+        aiSummary: ipo.aiSummary,
+        aiRecommendation: ipo.aiRecommendation,
       }));
 
       const savedIpos = await storage.bulkUpsertIpos(iposToUpsert);
