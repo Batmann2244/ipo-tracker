@@ -194,6 +194,30 @@ export class ScraperAggregator {
       basisOfAllotmentDate: existing.basisOfAllotmentDate ?? incoming.basisOfAllotmentDate,
       refundsInitiationDate: existing.refundsInitiationDate ?? incoming.refundsInitiationDate,
       creditToDematDate: existing.creditToDematDate ?? incoming.creditToDematDate,
+
+      // Financials (Preserve existing if present, else use incoming)
+      revenueGrowth: existing.revenueGrowth ?? incoming.revenueGrowth,
+      ebitdaMargin: existing.ebitdaMargin ?? incoming.ebitdaMargin,
+      patMargin: existing.patMargin ?? incoming.patMargin,
+      roe: existing.roe ?? incoming.roe,
+      roce: existing.roce ?? incoming.roce,
+      debtToEquity: existing.debtToEquity ?? incoming.debtToEquity,
+      peRatio: existing.peRatio ?? incoming.peRatio,
+      pbRatio: existing.pbRatio ?? incoming.pbRatio,
+      sectorPeMedian: existing.sectorPeMedian ?? incoming.sectorPeMedian,
+      promoterHolding: existing.promoterHolding ?? incoming.promoterHolding,
+      postIpoPromoterHolding: existing.postIpoPromoterHolding ?? incoming.postIpoPromoterHolding,
+
+      // Analysis
+      redFlags: (existing.redFlags?.length ?? 0) > (incoming.redFlags?.length ?? 0) ? existing.redFlags : incoming.redFlags,
+      pros: (existing.pros?.length ?? 0) > (incoming.pros?.length ?? 0) ? existing.pros : incoming.pros,
+      riskLevel: existing.riskLevel ?? incoming.riskLevel,
+      overallScore: existing.overallScore ?? incoming.overallScore,
+      fundamentalsScore: existing.fundamentalsScore ?? incoming.fundamentalsScore,
+      valuationScore: existing.valuationScore ?? incoming.valuationScore,
+      governanceScore: existing.governanceScore ?? incoming.governanceScore,
+      aiSummary: existing.aiSummary ?? incoming.aiSummary,
+      aiRecommendation: existing.aiRecommendation ?? incoming.aiRecommendation,
     };
   }
 

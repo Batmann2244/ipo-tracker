@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import puppeteer from "puppeteer";
+import pLimit from "p-limit";
 import {
   BaseScraper,
   IpoData,
@@ -16,6 +17,8 @@ import {
   parseFinancialMetrics,
   generateScores,
   generateRiskAssessment,
+  parseDecimal,
+  parsePercentage
 } from "./base";
 import { getSourceLogger } from "../../logger/index";
 
@@ -100,6 +103,8 @@ export class ChittorgarhScraper extends BaseScraper {
             if (cells.length < 4) return;
 
             const companyName = cells[0]?.textContent?.trim();
+            const companyLink = cells[0]?.querySelector('a')?.href || null;
+
             if (!companyName || companyName.length < 3) return;
 
             // Extract data from cells (adjust indices based on actual table structure)
@@ -111,6 +116,7 @@ export class ChittorgarhScraper extends BaseScraper {
 
             results.push({
               companyName,
+              companyLink,
               openDate,
               closeDate,
               priceRange,
@@ -129,7 +135,7 @@ export class ChittorgarhScraper extends BaseScraper {
       logger.info(`📊 Extracted ${ipos.length} IPOs from browser`);
 
       // Convert raw data to IpoData format
-      const formattedIpos: IpoData[] = ipos.map(ipo => {
+      const initialIpos = ipos.map(ipo => {
         const { min, max } = parsePriceRange(ipo.priceRange || "");
 
         return {
@@ -145,12 +151,45 @@ export class ChittorgarhScraper extends BaseScraper {
           issueSize: ipo.issueSize || "TBA",
           issueSizeCrores: parseIssueSize(ipo.issueSize),
           status: determineStatus(parseDate(ipo.openDate), parseDate(ipo.closeDate)),
-          ipoType: "mainboard"
+          ipoType: "mainboard",
+          companyLink: ipo.companyLink
         };
       });
 
-      this.log(`Found ${formattedIpos.length} IPOs using Puppeteer`);
-      return this.wrapResult(formattedIpos, startTime);
+      // Fetch details for upcoming/open IPOs
+      const limit = pLimit(5);
+      logger.info("🔍 Fetching detailed financials for active IPOs...");
+
+      const enrichedIpos: IpoData[] = await Promise.all(initialIpos.map((ipo: any) => limit(async () => {
+        if ((ipo.status === 'upcoming' || ipo.status === 'open') && ipo.companyLink) {
+            try {
+                const details = await this.getIpoDetails(ipo.companyLink);
+
+                // Merge details
+                const merged = { ...ipo, ...details };
+
+                // Re-calculate scores with new details
+                return {
+                    ...merged,
+                    ...generateScores(merged),
+                    ...generateRiskAssessment(merged)
+                };
+            } catch (err) {
+                logger.warn(`Failed to fetch details for ${ipo.symbol}: ${err}`);
+                return ipo;
+            }
+        }
+
+        // Even without details, generate basic scores
+        return {
+            ...ipo,
+            ...generateScores(ipo),
+            ...generateRiskAssessment(ipo)
+        };
+      })));
+
+      this.log(`Found ${enrichedIpos.length} IPOs (enriched with details)`);
+      return this.wrapResult(enrichedIpos, startTime);
 
     } catch (err: any) {
       if (browser) {
@@ -160,6 +199,53 @@ export class ChittorgarhScraper extends BaseScraper {
       logger.error(`❌ Browser automation failed: ${err.message}`);
       return this.wrapResult([], startTime, err.message);
     }
+  }
+
+  async getIpoDetails(url: string): Promise<Partial<IpoData>> {
+      try {
+          const html = await this.fetchPage(url);
+          const $ = cheerio.load(html);
+          const details: Partial<IpoData> = {};
+
+          // Parse KPI Table
+          $("table").each((_, table) => {
+              const tableText = $(table).text();
+              if (tableText.includes("KPI") || tableText.includes("ROE") || tableText.includes("P/E")) {
+                  $(table).find("tr").each((_, row) => {
+                      const cells = $(row).find("td");
+                      if (cells.length >= 2) {
+                          const label = cells.eq(0).text().trim().toLowerCase();
+                          const valStr = cells.eq(1).text().trim();
+
+                          // Handle multiple columns (Pre/Post IPO)
+                          // Usually Post IPO is the last column if there are 3 cols
+
+                          if (label.includes("roe")) details.roe = parsePercentage(valStr) || undefined;
+                          else if (label.includes("roce")) details.roce = parsePercentage(valStr) || undefined;
+                          else if (label.includes("debt") && label.includes("equity")) details.debtToEquity = parseDecimal(valStr) || undefined;
+                          else if (label.includes("pat margin")) details.patMargin = parsePercentage(valStr) || undefined;
+                          else if (label.includes("p/e") || label.includes("pe ratio")) details.peRatio = parseDecimal(valStr) || undefined;
+                          else if (label.includes("ronw")) details.roe = details.roe || parsePercentage(valStr) || undefined; // Fallback ROE
+
+                          if (label.includes("promoter holding")) {
+                              if (cells.length > 2) {
+                                  // Assuming Col 1 is Pre, Col 2 is Post
+                                  details.promoterHolding = parsePercentage(cells.eq(1).text()) || undefined;
+                                  details.postIpoPromoterHolding = parsePercentage(cells.eq(2).text()) || undefined;
+                              } else {
+                                  details.promoterHolding = parsePercentage(valStr) || undefined;
+                              }
+                          }
+                      }
+                  });
+              }
+          });
+
+          return details;
+      } catch (e) {
+          logger.warn(`Failed to fetch details from ${url}: ${e}`);
+          return {};
+      }
   }
 
   private isMoreComplete(a: IpoData, b: IpoData): boolean {
