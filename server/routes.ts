@@ -156,15 +156,24 @@ async function syncInvestorGainData() {
     const dbIpos = await storage.getIpos();
     let updatedCount = 0;
 
+    // Pre-normalize InvestorGain IPO names for faster matching
+    const normalizedIgIpos = igResult.data.map(igIpo => ({
+      original: igIpo,
+      normalizedName: igIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, ""),
+    }));
+
+    const updatePromises: Promise<any>[] = [];
+
     for (const dbIpo of dbIpos) {
       const normalizedDbName = dbIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-      const match = igResult.data.find(igIpo => {
-        const normalizedIgName = igIpo.companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
-        return normalizedDbName.includes(normalizedIgName) ||
-          normalizedIgName.includes(normalizedDbName) ||
-          normalizedDbName === normalizedIgName;
+      const matchItem = normalizedIgIpos.find(item => {
+        return normalizedDbName.includes(item.normalizedName) ||
+          item.normalizedName.includes(normalizedDbName) ||
+          normalizedDbName === item.normalizedName;
       });
+
+      const match = matchItem?.original;
 
       if (match) {
         const updates: any = {};
@@ -179,10 +188,14 @@ async function syncInvestorGainData() {
         }
 
         if (Object.keys(updates).length > 0) {
-          await storage.updateIpo(dbIpo.id, updates);
+          updatePromises.push(storage.updateIpo(dbIpo.id, updates));
           updatedCount++;
         }
       }
+    }
+
+    if (updatePromises.length > 0) {
+      await Promise.all(updatePromises);
     }
 
     console.log(`✅ Updated ${updatedCount} IPOs with InvestorGain data`);
