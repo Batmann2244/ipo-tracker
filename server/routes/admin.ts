@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { requireAuth } from "../middleware/auth";
+import { requireAdmin } from "../middleware/auth";
+import { adminRateLimiter } from "../middleware/login-rate-limiter";
 import { storage } from "../storage";
 import { testScraper, scrapeAndTransformIPOs, generatePeerCompanies, generateFundUtilization } from "../services/scraper";
 import { investorGainScraper } from "../services/scrapers/investorgain";
@@ -8,7 +9,7 @@ import { sendIpoEmailAlert } from "../services/email";
 
 const router = Router();
 
-router.get("/sync/test", requireAuth, async (req, res) => {
+router.get("/sync/test", adminRateLimiter, requireAdmin, async (req, res) => {
   try {
     const result = await testScraper();
     res.json(result);
@@ -20,7 +21,7 @@ router.get("/sync/test", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/sync", requireAuth, async (req, res) => {
+router.post("/sync", adminRateLimiter, requireAdmin, async (req, res) => {
   try {
     console.log("🔄 Starting IPO data sync from multiple sources...");
 
@@ -143,7 +144,7 @@ router.post("/sync", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/stats", requireAuth, async (req, res) => {
+router.get("/stats", adminRateLimiter, requireAdmin, async (req, res) => {
   const count = await storage.getIpoCount();
   const ipos = await storage.getIpos();
 
@@ -162,7 +163,7 @@ router.get("/stats", requireAuth, async (req, res) => {
   res.json(stats);
 });
 
-router.post("/sync/clean", requireAuth, async (req, res) => {
+router.post("/sync/clean", adminRateLimiter, requireAdmin, async (req, res) => {
   try {
     console.log("🧹 Starting clean sync - marking old IPOs as listed...");
 
@@ -206,7 +207,7 @@ router.post("/sync/clean", requireAuth, async (req, res) => {
 });
 
 // Scraper Logger Routes
-router.get("/scraper-logs", requireAuth, async (req, res) => {
+router.get("/scraper-logs", adminRateLimiter, requireAdmin, async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const logs = await scraperLogger.getRecentLogs(limit);
@@ -216,7 +217,7 @@ router.get("/scraper-logs", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/scraper-logs/source/:source", requireAuth, async (req, res) => {
+router.get("/scraper-logs/source/:source", adminRateLimiter, requireAdmin, async (req, res) => {
   try {
     const source = req.params.source as any;
     const limit = Math.min(Number(req.query.limit) || 20, 100);
@@ -227,7 +228,7 @@ router.get("/scraper-logs/source/:source", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/scraper-stats", requireAuth, async (req, res) => {
+router.get("/scraper-stats", adminRateLimiter, requireAdmin, async (req, res) => {
   try {
     const hoursBack = Number(req.query.hours) || 24;
     const stats = await scraperLogger.getSourceStats(hoursBack);
@@ -237,7 +238,7 @@ router.get("/scraper-stats", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/scraper-health", requireAuth, async (req, res) => {
+router.get("/scraper-health", adminRateLimiter, requireAdmin, async (req, res) => {
   try {
     const health = await scraperLogger.getHealthStatus();
     res.json(health);
@@ -246,7 +247,7 @@ router.get("/scraper-health", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/sync-investorgain-ids", requireAuth, async (req, res) => {
+router.post("/sync-investorgain-ids", adminRateLimiter, requireAdmin, async (req, res) => {
   try {
     const iposResult = await investorGainScraper.getIpos();
     if (!iposResult.success || iposResult.data.length === 0) {
@@ -284,7 +285,7 @@ router.post("/sync-investorgain-ids", requireAuth, async (req, res) => {
 });
 
 // Test alert sending (admin only)
-router.post("/test-alert/:id", requireAuth, async (req: any, res) => {
+router.post("/test-alert/:id", adminRateLimiter, requireAdmin, async (req: any, res) => {
   try {
     const userId = req.user.claims.sub;
     const ipo = await storage.getIpo(Number(req.params.id));

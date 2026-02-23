@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { analyzeIpo } from "../services/ai-analysis";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAdmin } from "../middleware/auth";
+import { adminRateLimiter } from "../middleware/login-rate-limiter";
 
 const router = Router();
 
-router.post("/api/ipos/:id/analyze", requireAuth, async (req, res) => {
+router.post("/api/ipos/:id/analyze", adminRateLimiter, requireAdmin, async (req, res) => {
   try {
     const ipo = await storage.getIpo(Number(req.params.id));
     if (!ipo) {
