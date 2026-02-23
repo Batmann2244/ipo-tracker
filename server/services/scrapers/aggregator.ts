@@ -15,6 +15,7 @@ import { ipoWatchScraper } from "./ipowatch";
 import { zeodhaScraper } from "./zerodha";
 import { investorgainApiScraper } from "./investorgain-api";
 import { scraperLogger, type ScraperSource, type ScraperOperation } from "../scraper-logger";
+import pLimit from "p-limit";
 
 export interface AggregatedIpoData extends IpoData {
   sources: string[];
@@ -43,6 +44,9 @@ export interface AggregatorResult<T> {
 }
 
 export class ScraperAggregator {
+  // Limit concurrency to 2 to prevent resource exhaustion (browser crashes)
+  private limit = pLimit(2);
+
   private log(message: string): void {
     console.log(`[Aggregator] ${message}`);
   }
@@ -93,14 +97,14 @@ export class ScraperAggregator {
 
     const tasks: Promise<ScraperResult<IpoData>>[] = [];
 
-    if (sources.includes("investorgain")) tasks.push(investorGainScraper.getIpos());
-    if (sources.includes("groww")) tasks.push(growwScraper.getIpos());
-    if (sources.includes("chittorgarh")) tasks.push(chittorgarhScraper.getIpos());
-    if (sources.includes("nse")) tasks.push(nseScraper.getIpos());
-    if (sources.includes("ipoalerts")) tasks.push(ipoAlertsScraper.getOpenIpos());
-    if (sources.includes("bse")) tasks.push(bseScraper.getIpos());
-    if (sources.includes("ipowatch")) tasks.push(ipoWatchScraper.getIpos());
-    if (sources.includes("zerodha")) tasks.push(zeodhaScraper.getIpos());
+    if (sources.includes("investorgain")) tasks.push(this.limit(() => investorGainScraper.getIpos()));
+    if (sources.includes("groww")) tasks.push(this.limit(() => growwScraper.getIpos()));
+    if (sources.includes("chittorgarh")) tasks.push(this.limit(() => chittorgarhScraper.getIpos()));
+    if (sources.includes("nse")) tasks.push(this.limit(() => nseScraper.getIpos()));
+    if (sources.includes("ipoalerts")) tasks.push(this.limit(() => ipoAlertsScraper.getOpenIpos()));
+    if (sources.includes("bse")) tasks.push(this.limit(() => bseScraper.getIpos()));
+    if (sources.includes("ipowatch")) tasks.push(this.limit(() => ipoWatchScraper.getIpos()));
+    if (sources.includes("zerodha")) tasks.push(this.limit(() => zeodhaScraper.getIpos()));
 
     const settled = await Promise.allSettled(tasks);
 
@@ -203,10 +207,10 @@ export class ScraperAggregator {
 
     const tasks: Promise<ScraperResult<SubscriptionData>>[] = [];
 
-    if (sources.includes("chittorgarh")) tasks.push(chittorgarhScraper.getSubscriptions());
-    if (sources.includes("groww")) tasks.push(growwScraper.getSubscriptions());
-    if (sources.includes("investorgain")) tasks.push(investorGainScraper.getSubscriptions());
-    if (sources.includes("nse")) tasks.push(nseScraper.getSubscriptions());
+    if (sources.includes("chittorgarh")) tasks.push(this.limit(() => chittorgarhScraper.getSubscriptions()));
+    if (sources.includes("groww")) tasks.push(this.limit(() => growwScraper.getSubscriptions()));
+    if (sources.includes("investorgain")) tasks.push(this.limit(() => investorGainScraper.getSubscriptions()));
+    if (sources.includes("nse")) tasks.push(this.limit(() => nseScraper.getSubscriptions()));
 
     const settled = await Promise.allSettled(tasks);
 
@@ -283,8 +287,8 @@ export class ScraperAggregator {
 
     const tasks: Promise<ScraperResult<GmpData>>[] = [];
 
-    if (sources.includes("chittorgarh")) tasks.push(chittorgarhScraper.getGmp());
-    if (sources.includes("investorgain")) tasks.push(investorGainScraper.getGmp());
+    if (sources.includes("chittorgarh")) tasks.push(this.limit(() => chittorgarhScraper.getGmp()));
+    if (sources.includes("investorgain")) tasks.push(this.limit(() => investorGainScraper.getGmp()));
 
     const settled = await Promise.allSettled(tasks);
 

@@ -273,6 +273,21 @@ export abstract class BaseScraper {
     return BaseScraper.browserPromise;
   }
 
+  public static async closeBrowser(): Promise<void> {
+    if (BaseScraper.browserPromise) {
+      try {
+        const browser = await BaseScraper.browserPromise;
+        if (browser) {
+          await browser.close();
+        }
+      } catch (err) {
+        console.error("Error closing shared browser:", err);
+      } finally {
+        BaseScraper.browserPromise = null;
+      }
+    }
+  }
+
   protected async fetchWithPuppeteer(url: string, waitForSelector: string = 'body', waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2' = 'networkidle2'): Promise<string> {
     const startTime = Date.now();
     let page;
