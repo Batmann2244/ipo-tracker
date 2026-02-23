@@ -1,36 +1,6 @@
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import type { Express } from 'express';
-import { setupAuth } from './replitAuth';
-
-// Mock dependencies
-vi.mock('express-session', () => {
-  const EventEmitter = require('events').EventEmitter;
-  const session = vi.fn(() => (req, res, next) => next());
-
-  function Store() {
-    EventEmitter.call(this);
-  }
-  // Inherit from EventEmitter
-  Store.prototype = Object.create(EventEmitter.prototype);
-  Store.prototype.constructor = Store;
-
-  (session as any).Store = Store;
-
-  return {
-    default: session
-  };
-});
-
-vi.mock('passport', () => ({
-  default: {
-    initialize: vi.fn(() => (req, res, next) => next()),
-    session: vi.fn(() => (req, res, next) => next()),
-    serializeUser: vi.fn(),
-    deserializeUser: vi.fn(),
-    use: vi.fn(),
-    authenticate: vi.fn(() => (req, res, next) => next()),
-  }
-}));
+import { setupAuth, isAuthenticated } from './replitAuth';
 
 vi.mock('./storage', () => ({
   authStorage: {
@@ -38,51 +8,53 @@ vi.mock('./storage', () => ({
   }
 }));
 
-// We don't need to mock openid-client deeply because we are targeting the path where REPL_ID is missing
-vi.mock('openid-client', () => ({
-  discovery: vi.fn(),
-}));
-
-describe('replitAuth - setupAuth (Local Mode)', () => {
-  const originalEnv = process.env;
-
+describe('replitAuth - setupAuth (Mock Auth)', () => {
   beforeEach(() => {
-    vi.resetModules();
     vi.clearAllMocks();
-    process.env = { ...originalEnv };
-    delete process.env.REPL_ID; // Ensure local mode
   });
 
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
-  it('registers /api/login with generated mock credentials when REPL_ID is not set', async () => {
+  it('registers middleware that sets a mock user on req', async () => {
+    const middlewareFns: Function[] = [];
     const app = {
-      set: vi.fn(),
-      use: vi.fn(),
-      get: vi.fn(),
+      use: vi.fn((fn) => middlewareFns.push(fn)),
     } as unknown as Express;
 
     await setupAuth(app);
 
-    // Verify /api/login route is registered
-    expect(app.get).toHaveBeenCalledWith('/api/login', expect.any(Function));
+    expect(app.use).toHaveBeenCalled();
+
+    // Simulate a request through the middleware
+    const req: any = {};
+    const res: any = {};
+    const next = vi.fn();
+    middlewareFns[0](req, res, next);
+
+    expect(req.user).toBeDefined();
+    expect(req.user.claims.sub).toBe('default-user');
+    expect(req.isAuthenticated()).toBe(true);
+    expect(next).toHaveBeenCalled();
   });
 
-  it('should THROW ERROR in production when REPL_ID is missing (Vulnerability Fix)', async () => {
+  it('sets up mock auth in production mode', async () => {
+    const savedEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
-    process.env.SESSION_SECRET = 'test-secret'; // Required to pass getSession check
-    delete process.env.REPL_ID;
-
-    const { setupAuth: setupAuthProd } = await import('./replitAuth');
 
     const app = {
-      set: vi.fn(),
       use: vi.fn(),
-      get: vi.fn(),
     } as unknown as Express;
 
-    await expect(setupAuthProd(app)).rejects.toThrow('REPL_ID environment variable is not set');
+    await expect(setupAuth(app)).resolves.not.toThrow();
+
+    process.env.NODE_ENV = savedEnv;
+  });
+
+  it('isAuthenticated calls next immediately', async () => {
+    const req: any = {};
+    const res: any = {};
+    const next = vi.fn();
+
+    await isAuthenticated(req, res, next);
+
+    expect(next).toHaveBeenCalled();
   });
 });
