@@ -10,6 +10,7 @@ import {
 import { scraperAggregator } from "./scrapers";
 import { storage } from "../storage";
 import { ipoAlertsScraper } from "./scrapers/ipoalerts";
+import { BaseScraper } from "./scrapers/base";
 
 interface SchedulerState {
   isRunning: boolean;
@@ -83,68 +84,78 @@ async function pollDataSources(): Promise<{
   const isBidding = isBiddingHours();
   console.log(`📅 Bidding hours: ${isBidding ? "YES" : "NO"}`);
 
-  // 1. Sync IPO Details (The Missing Link!)
   try {
-    console.log("🔄 Syncing IPO data from Aggregator (All sources)...");
-    const aggregatedResults = await scraperAggregator.getIpos([
-      "investorgain", "nsetools", "groww", "chittorgarh", "ipoalerts", "bse", "ipowatch", "zerodha", "nse"
-    ]);
+    // 1. Sync IPO Details (The Missing Link!)
+    try {
+      console.log("🔄 Syncing IPO data from Aggregator (All sources)...");
+      const aggregatedResults = await scraperAggregator.getIpos([
+        "investorgain", "nsetools", "groww", "chittorgarh", "ipoalerts", "bse", "ipowatch", "zerodha", "nse"
+      ]);
 
-    if (aggregatedResults.data.length > 0) {
-      console.log(`📥 Upserting ${aggregatedResults.data.length} IPOs to database...`);
+      if (aggregatedResults.data.length > 0) {
+        console.log(`📥 Upserting ${aggregatedResults.data.length} IPOs to database...`);
 
-      const iposToUpsert = aggregatedResults.data.map(ipo => ({
-        symbol: ipo.symbol,
-        companyName: ipo.companyName,
-        status: ipo.status,
-        priceRange: cleanPriceRange(ipo.priceRange),
-        issueSize: ipo.issueSize,
-        lotSize: ipo.lotSize,
-        expectedDate: ipo.listingDate || ipo.closeDate || ipo.openDate || null,
-        minInvestment: (ipo.priceMin && ipo.lotSize) ? String(ipo.priceMin * ipo.lotSize) : null,
-      }));
+        const iposToUpsert = aggregatedResults.data.map(ipo => ({
+          symbol: ipo.symbol,
+          companyName: ipo.companyName,
+          status: ipo.status,
+          priceRange: cleanPriceRange(ipo.priceRange),
+          issueSize: ipo.issueSize,
+          lotSize: ipo.lotSize,
+          expectedDate: ipo.listingDate || ipo.closeDate || ipo.openDate || null,
+          minInvestment: (ipo.priceMin && ipo.lotSize) ? String(ipo.priceMin * ipo.lotSize) : null,
+        }));
 
-      const savedIpos = await storage.bulkUpsertIpos(iposToUpsert);
-      console.log(`✅ Successfully saved ${savedIpos.length} IPOs to DB.`);
-    } else {
-      console.warn("⚠️ Aggregator returned 0 IPOs!");
+        const savedIpos = await storage.bulkUpsertIpos(iposToUpsert);
+        console.log(`✅ Successfully saved ${savedIpos.length} IPOs to DB.`);
+      } else {
+        console.warn("⚠️ Aggregator returned 0 IPOs!");
+      }
+    } catch (err) {
+      console.error("❌ Aggregator sync failed:", err);
     }
-  } catch (err) {
-    console.error("❌ Aggregator sync failed:", err);
-  }
 
-  // 2. Fetch Alerts (Existing Logic)
-  fetchFromIpoAlertsIfScheduled().catch(err => console.error('[IPOAlerts] Error:', err));
+    // 2. Fetch Alerts (Existing Logic)
+    fetchFromIpoAlertsIfScheduled().catch(err => console.error('[IPOAlerts] Error:', err));
 
-  try {
-    const [subscriptionData, gmpData] = await Promise.all([
-      fetchAggregatedSubscription(state.previousSubscriptionData),
-      scrapeGmpFromMultipleSources(),
-    ]);
+    try {
+      const [subscriptionData, gmpData] = await Promise.all([
+        fetchAggregatedSubscription(state.previousSubscriptionData),
+        scrapeGmpFromMultipleSources(),
+      ]);
 
-    const alerts = checkAlertThresholds(
-      subscriptionData,
-      gmpData,
-      state.previousGmpData
-    );
+      const alerts = checkAlertThresholds(
+        subscriptionData,
+        gmpData,
+        state.previousGmpData
+      );
 
-    // ... Update State caches ...
-    subscriptionData.forEach(sub => sub.total !== null && state.previousSubscriptionData.set(sub.symbol, sub.total));
-    gmpData.forEach(gmp => state.previousGmpData.set(gmp.symbol, gmp.gmp));
+      // ... Update State caches ...
+      subscriptionData.forEach(sub => sub.total !== null && state.previousSubscriptionData.set(sub.symbol, sub.total));
+      gmpData.forEach(gmp => state.previousGmpData.set(gmp.symbol, gmp.gmp));
 
-    state.lastPollTime = new Date();
-    state.pollCount++;
-    state.alerts = [...state.alerts.slice(-50), ...alerts];
+      state.lastPollTime = new Date();
+      state.pollCount++;
+      state.alerts = [...state.alerts.slice(-50), ...alerts];
 
-    // ... Save Sub/GMP updates to DB ...
-    // (Existing logic preserved below)
+      // ... Save Sub/GMP updates to DB ...
+      // (Existing logic preserved below)
 
-    console.log(`\n✅ Poll complete. Next poll in ${isBidding ? "5" : "30"} minutes`);
+      console.log(`\n✅ Poll complete. Next poll in ${isBidding ? "5" : "30"} minutes`);
 
-    return { subscription: subscriptionData, gmp: gmpData, alerts };
-  } catch (error) {
-    console.error("Poll failed:", error);
-    throw error;
+      return { subscription: subscriptionData, gmp: gmpData, alerts };
+    } catch (error) {
+      console.error("Poll failed:", error);
+      throw error;
+    }
+  } finally {
+    // Ensure browser is closed after poll cycle to prevent memory leaks
+    try {
+        await BaseScraper.closeBrowser();
+        console.log("🧹 Browser resources cleaned up");
+    } catch (cleanupErr) {
+        console.error("❌ Failed to cleanup browser resources:", cleanupErr);
+    }
   }
 }
 
