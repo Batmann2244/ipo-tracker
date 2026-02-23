@@ -95,16 +95,11 @@ function NavHeader() {
             </nav>
           </div>
           <div className="flex items-center gap-3">
-            <a href="/api/login">
-              <Button variant="ghost" className="text-foreground font-medium" data-testid="button-login">
-                Login
-              </Button>
-            </a>
-            <a href="/api/login">
+            <Link href="/dashboard">
               <Button className="bg-primary text-white hover:bg-primary/90 font-semibold rounded-full px-6" data-testid="button-signup">
                 Dashboard <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
-            </a>
+            </Link>
           </div>
         </div>
       </div>
@@ -329,15 +324,15 @@ export default function Landing() {
         </p>
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-          <a href="/api/login">
+          <Link href="/dashboard">
             <Button 
               size="lg" 
               className="h-12 px-8 text-base font-semibold rounded-lg bg-foreground text-background hover:bg-foreground/90"
               data-testid="button-hero-start"
             >
-              Get started for free
+              Go to Dashboard
             </Button>
-          </a>
+          </Link>
           <Link href="/dashboard">
             <Button 
               size="lg" 
@@ -395,11 +390,11 @@ export default function Landing() {
       <section className="py-16 bg-muted">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <p className="text-muted-foreground mb-4">P.S. You can also ask for help or request for features.</p>
-          <a href="/api/login">
+          <Link href="/dashboard">
             <Button className="bg-primary text-white hover:bg-primary/90 font-semibold rounded-lg px-8" data-testid="button-cta-signup">
               Start Analyzing IPOs
             </Button>
-          </a>
+          </Link>
         </div>
       </section>
 

@@ -4,7 +4,6 @@ import {
   LayoutDashboard, 
   Bookmark, 
   Settings, 
-  LogOut, 
   Menu,
   X,
   TrendingUp,
@@ -19,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 export function Navigation() {
   const [location] = useLocation();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const isActive = (path: string) => location === path;
@@ -77,15 +76,6 @@ export function Navigation() {
                 <span className="text-sm font-medium text-foreground">{user.firstName || 'User'}</span>
                 <ChevronDown className="w-4 h-4 text-muted-foreground" />
               </div>
-              <Button 
-                variant="ghost" 
-                size="sm"
-                className="text-muted-foreground hover:text-foreground"
-                onClick={() => logout()}
-                data-testid="button-signout"
-              >
-                Logout
-              </Button>
             </div>
           </div>
         </div>
@@ -144,14 +134,6 @@ export function Navigation() {
                   <p className="text-xs text-muted-foreground">{user.email}</p>
                 </div>
               </div>
-              <Button 
-                variant="ghost"
-                className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
-                onClick={() => logout()}
-              >
-                <LogOut className="w-4 h-4 mr-2" />
-                Sign Out
-              </Button>
             </div>
           </nav>
         </div>
