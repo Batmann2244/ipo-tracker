@@ -9,7 +9,7 @@ import {
   generateScores,
   generateRiskAssessment,
 } from "./base";
-import axios, { AxiosRequestConfig } from 'axios';
+import axios from 'axios';
 
 const URLS = {
   currentIpos: "https://www.nseindia.com/api/ipo-current-issue",
@@ -26,6 +26,10 @@ const NSE_BASE_HEADERS = {
   "Referer": "https://www.nseindia.com/market-data/all-upcoming-issues-ipo",
   "Origin": "https://www.nseindia.com",
 };
+
+// Issue types that represent actual IPOs/FPOs; all others (e.g. RI=Rights Issue,
+// OTB=Offer to Buy, CMN=Commercial Notes) should be excluded.
+const VALID_NSE_ISSUE_TYPES = new Set(["IPO", "FPO", "NCD", "FO"]);
 
 interface NseIpoData {
   symbol: string;
@@ -45,10 +49,19 @@ interface NseCurrentIpo {
   issueEndDate: string;
   issuePrice: string;
   issueSizeAmount: string;
+  issueType?: string;
   qibSubscription?: number;
   niiSubscription?: number;
   retailSubscription?: number;
   totalSubscription?: number;
+}
+
+/** Extract the array from an NSE API response that may be a plain array or
+ *  wrapped in an object (e.g. `{ data: [...] }`). */
+function extractNseArray(data: any): any[] {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.data)) return data.data;
+  return [];
 }
 
 export class NseScraper extends BaseScraper {
@@ -145,7 +158,7 @@ export class NseScraper extends BaseScraper {
   private async fetchCurrentIpos(): Promise<IpoData[]> {
     try {
       // Use axios directly with proper cookies
-      const response = await axios.get<NseCurrentIpo[]>(URLS.currentIpos, {
+      const response = await axios.get(URLS.currentIpos, {
         headers: this.getHeadersWithCookies(),
         timeout: 15000,
         validateStatus: (status) => status < 500,
@@ -156,20 +169,24 @@ export class NseScraper extends BaseScraper {
         await this.initSession();
 
         // Retry with new cookies
-        const retryResponse = await axios.get<NseCurrentIpo[]>(URLS.currentIpos, {
+        const retryResponse = await axios.get(URLS.currentIpos, {
           headers: this.getHeadersWithCookies(),
           timeout: 15000,
         });
 
-        return (retryResponse.data || []).map(ipo => this.transformNseIpo(ipo, "open"));
+        return extractNseArray(retryResponse.data)
+          .filter((ipo: any) => !ipo.issueType || VALID_NSE_ISSUE_TYPES.has(ipo.issueType.toUpperCase()))
+          .map((ipo: any) => this.transformNseIpo(ipo, "open"));
       }
 
-      const data = response.data;
-      if (!Array.isArray(data) || data.length === 0) {
-        this.log(`NSE Current IPOs empty or invalid: ${JSON.stringify(data).substring(0, 500)}`);
+      const data = extractNseArray(response.data);
+      if (data.length === 0) {
+        this.log(`NSE Current IPOs empty or invalid: ${JSON.stringify(response.data).substring(0, 500)}`);
       }
 
-      return (data || []).map(ipo => this.transformNseIpo(ipo, "open"));
+      return data
+        .filter((ipo: any) => !ipo.issueType || VALID_NSE_ISSUE_TYPES.has(ipo.issueType.toUpperCase()))
+        .map((ipo: any) => this.transformNseIpo(ipo, "open"));
 
     } catch (err: any) {
       this.error("Failed to fetch current IPOs", {
@@ -183,7 +200,7 @@ export class NseScraper extends BaseScraper {
 
   private async fetchUpcomingIpos(): Promise<IpoData[]> {
     try {
-      const response = await axios.get<NseIpoData[]>(URLS.upcomingIpos, {
+      const response = await axios.get(URLS.upcomingIpos, {
         headers: this.getHeadersWithCookies(),
         timeout: 15000,
         validateStatus: (status) => status < 500,
@@ -193,15 +210,19 @@ export class NseScraper extends BaseScraper {
         this.log("Authentication failed for upcoming IPOs");
         await this.initSession();
 
-        const retryResponse = await axios.get<NseIpoData[]>(URLS.upcomingIpos, {
+        const retryResponse = await axios.get(URLS.upcomingIpos, {
           headers: this.getHeadersWithCookies(),
           timeout: 15000,
         });
 
-        return (retryResponse.data || []).map(ipo => this.transformNseIpo(ipo, "upcoming"));
+        return extractNseArray(retryResponse.data)
+          .filter((ipo: any) => !ipo.issueType || VALID_NSE_ISSUE_TYPES.has(ipo.issueType.toUpperCase()))
+          .map((ipo: any) => this.transformNseIpo(ipo, "upcoming"));
       }
 
-      return (response.data || []).map(ipo => this.transformNseIpo(ipo, "upcoming"));
+      return extractNseArray(response.data)
+        .filter((ipo: any) => !ipo.issueType || VALID_NSE_ISSUE_TYPES.has(ipo.issueType.toUpperCase()))
+        .map((ipo: any) => this.transformNseIpo(ipo, "upcoming"));
 
     } catch (err: any) {
       this.error("Failed to fetch upcoming IPOs", {
@@ -266,14 +287,14 @@ export class NseScraper extends BaseScraper {
     try {
       await this.initSession();
 
-      const response = await axios.get<NseCurrentIpo[]>(URLS.currentIpos, {
+      const response = await axios.get(URLS.currentIpos, {
         headers: this.getHeadersWithCookies(),
         timeout: 15000,
       });
 
       const subscriptions: SubscriptionData[] = [];
 
-      for (const ipo of response.data || []) {
+      for (const ipo of extractNseArray(response.data)) {
         if (ipo.totalSubscription) {
           subscriptions.push({
             symbol: ipo.symbol?.toUpperCase() || normalizeSymbol(ipo.companyName),
