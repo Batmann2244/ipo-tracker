@@ -11,7 +11,7 @@ export interface IWatchlistRepository {
   getWatchlist(userId: string): Promise<WatchlistResponse[]>;
   getWatchlistItem(userId: string, ipoId: number): Promise<WatchlistItem | undefined>;
   addToWatchlist(userId: string, ipoId: number): Promise<WatchlistItem>;
-  removeFromWatchlist(userId: string, id: number): Promise<void>;
+  removeFromWatchlist(userId: string, watchlistId: number): Promise<void>;
 }
 
 export class WatchlistRepository implements IWatchlistRepository {
@@ -51,9 +51,9 @@ export class WatchlistRepository implements IWatchlistRepository {
     return item;
   }
 
-  async removeFromWatchlist(userId: string, id: number): Promise<void> {
+  async removeFromWatchlist(userId: string, watchlistId: number): Promise<void> {
     await db
       .delete(watchlist)
-      .where(and(eq(watchlist.id, id), eq(watchlist.userId, userId)));
+      .where(and(eq(watchlist.id, watchlistId), eq(watchlist.userId, userId)));
   }
 }

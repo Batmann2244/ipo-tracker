@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { requireAuth } from "../middleware/auth";
+import { requireAdmin } from "../middleware/auth";
+import { adminRateLimiter } from "../middleware/login-rate-limiter";
 import {
   startScheduler,
   stopScheduler,
@@ -16,17 +17,17 @@ router.get("/status", async (req, res) => {
   res.json(status);
 });
 
-router.post("/start", requireAuth, async (req, res) => {
+router.post("/start", adminRateLimiter, requireAdmin, async (req, res) => {
   startScheduler();
   res.json({ success: true, message: "Scheduler started" });
 });
 
-router.post("/stop", requireAuth, async (req, res) => {
+router.post("/stop", adminRateLimiter, requireAdmin, async (req, res) => {
   stopScheduler();
   res.json({ success: true, message: "Scheduler stopped" });
 });
 
-router.post("/poll", requireAuth, async (req, res) => {
+router.post("/poll", adminRateLimiter, requireAdmin, async (req, res) => {
   try {
     const result = await triggerManualPoll();
     res.json({ success: true, ...result });
@@ -44,7 +45,7 @@ router.get("/alerts", async (req, res) => {
   res.json(alerts);
 });
 
-router.delete("/alerts", requireAuth, async (req, res) => {
+router.delete("/alerts", adminRateLimiter, requireAdmin, async (req, res) => {
   clearAlerts();
   res.json({ success: true, message: "Alerts cleared" });
 });

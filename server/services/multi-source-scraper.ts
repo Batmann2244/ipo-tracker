@@ -220,7 +220,7 @@ export async function scrapeGmpFromMultipleSources(): Promise<GmpData[]> {
     "https://www.chittorgarh.com/report/ipo-grey-market-premium-latest-mainboard-sme/90/",
   ];
 
-  const allGmpData: GmpData[] = [];
+  const allGmpMap = new Map<string, GmpData>();
 
   // 1. Scrape Chittorgarh (Primary Source)
   for (const url of gmpUrls) {
@@ -246,9 +246,8 @@ export async function scrapeGmpFromMultipleSources(): Promise<GmpData[]> {
         const expectedListing = expectedMatch ? parseInt(expectedMatch[0]) : null;
 
         if (symbol && symbol.length >= 3) {
-          const existing = allGmpData.find(g => g.symbol === symbol);
-          if (!existing) {
-            allGmpData.push({
+          if (!allGmpMap.has(symbol)) {
+            allGmpMap.set(symbol, {
               symbol,
               companyName: companyName.replace(/\s+IPO$/i, "").trim(),
               gmp,
@@ -263,7 +262,7 @@ export async function scrapeGmpFromMultipleSources(): Promise<GmpData[]> {
 
       // If we got good data from one Chittorgarh page, we don't necessarily need the other redundant one
       // unless the first one was empty.
-      if (allGmpData.length > 5) break;
+      if (allGmpMap.size > 5) break;
     } catch (error) {
       console.log(`GMP fetch from ${url} failed, trying next...`);
     }
@@ -277,9 +276,8 @@ export async function scrapeGmpFromMultipleSources(): Promise<GmpData[]> {
     if (ipoWatchResult.success && ipoWatchResult.data.length > 0) {
       let addedCount = 0;
       for (const item of ipoWatchResult.data) {
-        const existing = allGmpData.find(g => g.symbol === item.symbol);
-        if (!existing) {
-          allGmpData.push({
+        if (!allGmpMap.has(item.symbol)) {
+          allGmpMap.set(item.symbol, {
             symbol: item.symbol,
             companyName: item.companyName,
             gmp: item.gmp,
@@ -296,6 +294,8 @@ export async function scrapeGmpFromMultipleSources(): Promise<GmpData[]> {
   } catch (err) {
     console.error("[IPOWatch] GMP fetch failed:", err);
   }
+
+  const allGmpData = Array.from(allGmpMap.values());
 
   console.log(`✅ Found GMP data for ${allGmpData.length} IPOs total`);
   return allGmpData;

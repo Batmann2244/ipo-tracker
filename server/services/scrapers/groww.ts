@@ -1,5 +1,6 @@
 import {
   BaseScraper,
+  DEFAULT_HEADERS,
   IpoData,
   SubscriptionData,
   GmpData,
@@ -86,7 +87,7 @@ export class GrowwScraper extends BaseScraper {
           '--disable-accelerated-2d-canvas',
           '--disable-gpu',
           // '--window-size=1920,1080', // Not needed for JSON extraction
-          '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          `--user-agent=${DEFAULT_HEADERS["User-Agent"]}`
         ]
       });
 

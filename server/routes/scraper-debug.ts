@@ -57,7 +57,7 @@ export function registerScraperDebugRoutes(app: Express) {
         },
       };
 
-      logger.info("✅ Scraper test results:", summary);
+      logger.info("✅ Scraper test results:", summary.summary);
       res.json(summary);
     } catch (error) {
       logger.error("❌ Scraper test failed:", error);

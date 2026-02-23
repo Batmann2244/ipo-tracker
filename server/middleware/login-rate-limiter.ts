@@ -70,3 +70,6 @@ export class LoginRateLimiter {
 
 // Default instance: 10 requests per 15 minutes
 export const loginRateLimiter = new LoginRateLimiter(15 * 60 * 1000, 10).middleware;
+
+// Admin routes: 30 requests per minute
+export const adminRateLimiter = new LoginRateLimiter(60 * 1000, 30).middleware;
