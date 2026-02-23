@@ -196,42 +196,11 @@ export class GrowwScraper extends BaseScraper {
 
   async getSubscriptions(): Promise<ScraperResult<SubscriptionData>> {
     const startTime = Date.now();
-
-    try {
-      const data = await this.fetchJson<GrowwApiResponse>(URLS.ipoApi);
-      const subscriptions: SubscriptionData[] = [];
-
-      const processSubscriptions = (list: GrowwIpoResponse[]) => {
-        for (const ipo of list || []) {
-          if (!ipo.subscriptionDetails) continue;
-
-          const symbol = normalizeSymbol(ipo.companyName);
-          const { totalSubscription, qibSubscription, niiSubscription, retailSubscription } = ipo.subscriptionDetails;
-
-          if (totalSubscription > 0) {
-            subscriptions.push({
-              symbol,
-              companyName: ipo.companyName,
-              qib: qibSubscription || null,
-              nii: niiSubscription || null,
-              hni: niiSubscription || null,
-              retail: retailSubscription || null,
-              total: totalSubscription,
-              applications: null,
-            });
-          }
-        }
-      };
-
-      processSubscriptions(data.openIpos);
-      processSubscriptions(data.closedIpos);
-
-      this.log(`Found ${subscriptions.length} subscription records`);
-      return this.wrapResult(subscriptions, startTime);
-    } catch (err: any) {
-      this.error("Failed to get subscriptions", err);
-      return this.wrapResult([], startTime, err.message);
-    }
+    // The previous API endpoint (https://groww.in/v1/api/stocks_ipo/v1/ipo) is 404 (deprecated).
+    // Main page JSON does not contain detailed subscription data.
+    // Returning empty success to avoid error noise.
+    logger.warn("Detailed subscription data unavailable via Groww API/JSON");
+    return this.wrapResult([], startTime);
   }
 
   async getGmp(): Promise<ScraperResult<GmpData>> {
