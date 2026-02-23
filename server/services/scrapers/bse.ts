@@ -1,25 +1,6 @@
 import { BaseScraper, ScraperResult, IpoData, SubscriptionData, GmpData } from './base';
 import * as puppeteer from 'puppeteer';
 
-export function shouldForceJsonParse(url: string, resourceType: string): boolean {
-    const apiPatterns = [
-        'GetPipoData',
-        'IPOIssues',
-        'PublicIssueData',
-        '/api/',
-        'GetData'
-    ];
-
-    // Check if URL matches any API pattern
-    const isApiUrl = apiPatterns.some(pattern => url.includes(pattern));
-
-    // Check if resource type suggests an API call (XHR or Fetch)
-    // We explicitly exclude 'document' to avoid parsing the main page as JSON
-    const isApiResource = resourceType === 'xhr' || resourceType === 'fetch';
-
-    return isApiUrl && isApiResource;
-}
-
 export class BseScraper extends BaseScraper {
     constructor() {
         super('bse');
@@ -30,7 +11,7 @@ export class BseScraper extends BaseScraper {
         const startTime = Date.now();
 
         try {
-            this.sourceLogger.info("Starting BSE scraper with network interception");
+            this.sourceLogger.info("Starting BSE scraper (simplified)");
 
             const interceptedData: any[] = [];
 
@@ -39,133 +20,45 @@ export class BseScraper extends BaseScraper {
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-background-networking',
-                    '--disable-sync',
-                    '--metrics-recording-only',
-                    '--mute-audio'
                 ]
             });
 
             const page = await browser.newPage();
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-            // Set user agent
-            await page.setUserAgent(
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            );
+            page.on('console', msg => this.sourceLogger.debug('PAGE LOG:', msg.text()));
 
-            // CRITICAL FIX 1: Set up request interception FIRST (before any navigation)
-            await page.setRequestInterception(true);
-
-            page.on('request', (req: puppeteer.HTTPRequest) => {
-                const resourceType = req.resourceType();
-                // Block images, media, fonts, stylesheets for speed
-                if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
-                    req.abort();
-                } else {
-                    req.continue();
-                }
-            });
-
-            // CRITICAL FIX 2: Set up response listener AFTER request interception
-            page.on('response', async (response) => {
-                const url = response.url();
-                const status = response.status();
-
-                // Log all responses for debugging
-                this.sourceLogger.debug(`Response: ${url} - Status: ${status}`);
-
-                // Intercept BSE API calls
-                if (
-                    url.includes('GetPipoData') ||
-                    url.includes('IPOIssues') ||
-                    url.includes('PublicIssueData') ||
-                    url.includes('/api/') ||
-                    url.includes('GetData')
-                ) {
-                    try {
-                        const contentType = response.headers()['content-type'] || '';
-                        const resourceType = response.request().resourceType();
-
-                        this.sourceLogger.info(`📡 Intercepted BSE endpoint: ${url}`, {
-                            status,
-                            contentType,
-                            resourceType
-                        });
-
-                        // FIX: Attempt to parse JSON for API URLs even if content-type is wrong
-                        // We check for 'xhr' or 'fetch' to avoid trying to parse the main HTML document
-                        const isJson = contentType.includes('application/json');
-                        const shouldParse = isJson || shouldForceJsonParse(url, resourceType);
-
-                        if (shouldParse) {
-                            try {
-                                const data = await response.json();
-                                this.sourceLogger.info('JSON data received', {
-                                    dataType: typeof data,
-                                    isArray: Array.isArray(data),
-                                    keys: Object.keys(data || {})
-                                });
-
-                                // Handle different response structures
-                                if (Array.isArray(data)) {
-                                    interceptedData.push(...data);
-                                } else if (data.Table) {
-                                    // ASP.NET DataTable format
-                                    interceptedData.push(...(Array.isArray(data.Table) ? data.Table : [data.Table]));
-                                } else if (data.d) {
-                                    // ASP.NET WebMethod format
-                                    const parsed = typeof data.d === 'string' ? JSON.parse(data.d) : data.d;
-                                    if (Array.isArray(parsed)) {
-                                        interceptedData.push(...parsed);
-                                    } else if (parsed.Table) {
-                                        interceptedData.push(...(Array.isArray(parsed.Table) ? parsed.Table : [parsed.Table]));
-                                    }
-                                } else if (data.data || data.result || data.ipos) {
-                                    const arr = data.data || data.result || data.ipos;
-                                    if (Array.isArray(arr)) {
-                                        interceptedData.push(...arr);
-                                    }
-                                } else {
-                                    // Log unexpected structure
-                                    this.sourceLogger.warn('Unexpected JSON structure', { data });
-                                }
-                            } catch (parseError) {
-                                // Ignore parse errors for non-JSON
-                            }
-                        }
-                    } catch (e: any) {
-                        this.sourceLogger.debug('Response parse error', { error: e.message });
-                    }
-                }
-            });
-
-            // Navigate to BSE IPO page
             const url = 'https://www.bseindia.com/markets/PublicIssues/IPOIssues_New.aspx';
 
             try {
                 this.sourceLogger.info(`Navigating to ${url}`);
                 await page.goto(url, {
-                    waitUntil: 'networkidle2',
-                    timeout: 60000
+                    waitUntil: 'domcontentloaded',
+                    timeout: 20000
                 });
 
-                // Wait additional time for AJAX to complete
-                this.sourceLogger.info('Waiting for AJAX calls to complete...');
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                // Interact with the form
+                try {
+                    this.sourceLogger.info("Selecting IPO option...");
+                    await page.waitForSelector('#ctl00_ContentPlaceHolder1_ddlIssueType', { timeout: 5000 });
+                    await page.select('#ctl00_ContentPlaceHolder1_ddlIssueType', 'IPO');
 
-            } catch (navError: any) {
-                this.sourceLogger.warn(`Navigation timeout (continuing): ${navError.message}`);
-            }
+                    this.sourceLogger.info("Clicking Submit...");
+                    await page.waitForSelector('#ctl00_ContentPlaceHolder1_btnSubmit', { timeout: 5000 });
 
-            // CRITICAL FIX 3: Improved DOM fallback
-            if (interceptedData.length === 0) {
-                this.sourceLogger.warn('No API data intercepted, attempting DOM extraction');
+                    await Promise.all([
+                        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }),
+                        page.click('#ctl00_ContentPlaceHolder1_btnSubmit')
+                    ]);
 
-                const domData = await page.evaluate(() => {
+                    this.sourceLogger.info("Form submitted, waiting for results...");
+                 } catch (interactionError: any) {
+                     this.sourceLogger.warn(`Form interaction failed: ${interactionError.message}`);
+                 }
+
+                 // Extract data
+                 const domData = await page.evaluate(() => {
                     const results: any[] = [];
-
                     // Try specific BSE table ID first
                     let targetTable = document.querySelector('#ContentPlaceHolder1_gvIPO');
 
@@ -180,28 +73,18 @@ export class BseScraper extends BaseScraper {
 
                     if (targetTable) {
                         const rows = targetTable.querySelectorAll('tr');
-
                         // Skip first row (header)
                         for (let i = 1; i < rows.length; i++) {
                             const cells = rows[i].querySelectorAll('td');
-
                             if (cells.length >= 4) {
-                                // Extract text from cells
                                 const cellTexts = Array.from(cells).map(c => c.textContent?.trim() || '');
-
-                                // Look for company name (usually in column 1 or 2)
-                                const nameCell = cellTexts.find(text =>
-                                    text &&
-                                    text.length > 3 &&
-                                    !text.match(/^\d+$/) && // Not just numbers
-                                    !text.toLowerCase().includes('no records')
-                                );
+                                const nameCell = cellTexts.find(text => text && text.length > 3 && !text.match(/^\d+$/) && !text.toLowerCase().includes('no records'));
 
                                 if (nameCell) {
                                     results.push({
                                         Scrip_Name: nameCell,
                                         Scrip_cd: cellTexts[0] || '',
-                                        Status: 'L', // Listed
+                                        Status: 'L',
                                         Price_Band: cellTexts[3] || 'TBA',
                                         Market_Lot: cellTexts[4] || '1',
                                         Start_Dt: cellTexts[5] || new Date().toISOString(),
@@ -212,7 +95,6 @@ export class BseScraper extends BaseScraper {
                             }
                         }
                     }
-
                     return results;
                 });
 
@@ -220,55 +102,38 @@ export class BseScraper extends BaseScraper {
                     this.sourceLogger.info(`DOM extraction found ${domData.length} records`);
                     interceptedData.push(...domData);
                 } else {
-                    this.sourceLogger.error('DOM extraction also returned 0 records');
+                     this.sourceLogger.warn('DOM extraction returned 0 records');
                 }
+
+            } catch (navError: any) {
+                this.sourceLogger.warn(`Navigation/Interaction error: ${navError.message}`);
             }
 
-            await browser.close();
-            browser = null;
-
-            // Transform to IpoData
-            const ipos: IpoData[] = interceptedData
-                .filter(item => {
-                    const name = item.Scrip_Name || item.SecurityName || item.Name;
-                    return name && name.trim().length > 0;
-                })
-                .map(item => {
-                    const companyName = item.Scrip_Name || item.SecurityName || item.Name || 'Unknown';
-                    const openDate = item.Start_Dt ? item.Start_Dt.split('T')[0] : null;
-                    const closeDate = item.End_Dt ? item.End_Dt.split('T')[0] : null;
-
-                    let status: 'open' | 'upcoming' | 'closed' = 'closed';
-                    if (item.Status === 'L' || item.Status === 'C') {
-                        status = 'open';
-                    } else if (item.Status === 'F') {
-                        status = 'upcoming';
-                    }
-
-                    return {
-                        symbol: item.Scrip_cd ? String(item.Scrip_cd) : this.generateSymbol(companyName),
-                        companyName,
-                        status,
-                        priceRange: item.Price_Band || 'TBA',
-                        issueSize: 'TBA',
-                        issueSizeCrores: null,
-                        priceMin: null,
-                        priceMax: null,
-                        lotSize: item.Market_Lot ? parseInt(item.Market_Lot) : null,
-                        listingDate: null,
-                        ipoType: item.eXCHANGE_PLATFORM === 'SME' ? 'sme' : 'mainboard',
-                        openDate,
-                        closeDate,
-                    };
-                });
+             // Transform to IpoData
+            const ipos: IpoData[] = interceptedData.map(item => ({
+                symbol: item.Scrip_cd ? String(item.Scrip_cd) : 'UNKNOWN',
+                companyName: item.Scrip_Name || 'Unknown',
+                status: 'closed' as const,
+                priceRange: item.Price_Band || 'TBA',
+                issueSize: 'TBA',
+                issueSizeCrores: null,
+                priceMin: null,
+                priceMax: null,
+                lotSize: item.Market_Lot ? parseInt(item.Market_Lot) : null,
+                listingDate: null,
+                ipoType: item.eXCHANGE_PLATFORM === 'SME' ? 'sme' : 'mainboard',
+                openDate: item.Start_Dt ? item.Start_Dt.split('T')[0] : null,
+                closeDate: item.End_Dt ? item.End_Dt.split('T')[0] : null,
+            }));
 
             this.sourceLogger.info(`BSE scraper completed: ${ipos.length} IPOs extracted`);
             return this.wrapResult(ipos, startTime);
 
         } catch (error: any) {
-            this.sourceLogger.error('BSE scraper error', { error: error.message, stack: error.stack });
-            if (browser) await browser.close();
+            this.sourceLogger.error('BSE scraper error', { error: error.message });
             return this.handleError(error);
+        } finally {
+             if (browser) await browser.close();
         }
     }
 
@@ -278,13 +143,6 @@ export class BseScraper extends BaseScraper {
 
     async getGmp(): Promise<ScraperResult<GmpData>> {
         return this.wrapGmpResult([], Date.now());
-    }
-
-    private generateSymbol(name: string): string {
-        return name
-            .toUpperCase()
-            .replace(/[^A-Z0-9]/g, '')
-            .substring(0, 15);
     }
 }
 

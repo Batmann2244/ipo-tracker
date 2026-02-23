@@ -40,11 +40,11 @@ export class ZeodhaScraper extends BaseScraper {
 
             // Try to wait for content with multiple fallback selectors
             try {
-                await page.waitForSelector('table, .ipo-row, [data-ipo], .table-container', { timeout: 10000 });
+                await page.waitForSelector('table, .ipo-row, [data-ipo], .table-container', { timeout: 5000 });
             } catch (e) {
                 this.sourceLogger.warn("Primary selectors not found, trying generic fallback");
                 try {
-                    await page.waitForSelector('div', { timeout: 5000 });
+                    await page.waitForSelector('div', { timeout: 2000 });
                 } catch (fallbackError) {
                     this.sourceLogger.warn("All selectors failed, proceeding with HTML extraction anyway");
                 }
@@ -135,6 +135,10 @@ export class ZeodhaScraper extends BaseScraper {
             return this.wrapResult(ipos, Date.now());
         } catch (error) {
             return this.handleError(error);
+        } finally {
+            if (browser) {
+                await browser.close();
+            }
         }
     }
 
